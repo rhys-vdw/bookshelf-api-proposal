@@ -18,7 +18,7 @@ This is conceptually messy, but also has resulted in code duplication between th
 
 No more `Collection`s. Result sets are returned as plain arrays. Instead `Gateway` offers an API for bulk `save`, `insert` or `update`.
 
-```
+```js
 // No longer doing this:
 Person.collection([fred, bob]).invokeThen('save').then( // ...
 Person.collection([fred, bob]).invokeThen('save', null, {method: 'insert'}).then( // ...
@@ -42,7 +42,7 @@ This means no more Lodash helpers and no intelligent `.add()` method.
 
 Defining table access information (`relations`, `idAttribute`, `tableName`) on `Model` is strange because models are our references to table rows. Ideally models and client code should be using a specific abstracted interface to access the database.
 
-```
+```js
 // -- Current --
 
 // Why are we `forge`ing a person here?
@@ -65,7 +65,7 @@ bookshelf('Person').one().where('id', 5).fetch().then((person) => // ...
 
 `Gateway` takes on most of the current responsibilities of `Model`:
 
-```
+```js
 // A Gateway definition:
 
 var Person = bookshelf.Gateway.extend({
@@ -109,7 +109,7 @@ bookshelf('Person', Person);
 
 Here is a thing you could do:
 
-```
+```js
 class Person extends bookshelf.Gateway {
   initialize() {
   	this.tableName('people').idAttribute('id').relations({
@@ -150,7 +150,7 @@ FemaleAustralians.save({name: 'Jane'}, {name: 'Janette'});
 
 Note that I've added a simple filter for `adults` above. Most methods on `Gateway` should be chainable to help build up queries (much like knex).
 
-```
+```js
 // Example gateway methods.
 class Gateway {
 
@@ -179,7 +179,7 @@ class Gateway {
 
 Example use:
 
-```
+```js
 // Get a person from the Smith family, and their house and daughters.
 bookshelf('Person')     // returns Person Gateway instance.
   .withRelated('house')
@@ -194,7 +194,7 @@ bookshelf('Person')     // returns Person Gateway instance.
 
 Gateway chains have four properties:
 
-```
+```js
 import Immutable, { Iterable } from 'immutable';
 
 class Gateway {
@@ -436,7 +436,7 @@ Moving the registry plugin to core is integral to the new design.
 
 Currently `Model` is aware of its Bookshelf client (and internal knex db connection) - and can only be reassigned by setting the `transacting` option. This is less flexible than it could be. Now every `Gateway` chain must be initialized via a client object.
 
-```
+```js
 class User extends bookshelf.Gateway { /* ... */ }
 
 // Using `User` directly.
@@ -458,7 +458,7 @@ bookshelf.transation(trx =>
 This simply instantiates a new `Gateway` instance with the correct `client` attached (either a `Bookshelf` or `Transaction` instance).
 
 
-```
+```js
 import GatewayBase from './base/Gateway';
 
 // Store an instantiated instance of a gateway. It doesn't matter that
@@ -522,7 +522,7 @@ Using `Gateway` relations become much simpler. A `Relation` is an interface that
 
 For instance:
 
-```
+```js
 class HasOne {
   constructor(SelfGateway, OtherGateway, keyColumns) {
   	this.Self = OtherGateway;
@@ -579,7 +579,7 @@ class HasOne {
 
 You can then work with relations like this:
 
-```
+```js
 bookshelf('User', class extends bookshelf.Gateway {
 	static get tableName() { return 'users' },
 	static get relations() {
@@ -604,7 +604,7 @@ bookshelf('User').related(user, 'projects').save([
 
 Internally `.related()` and `.load()` do something like this:
 
-```
+```js
 import _, {noop} from 'lodash';
 
 /*
@@ -723,7 +723,7 @@ class Gateway {
 ```
 
 
-```
+```js
 bookshelf(Person)
   .one().where('id', 5)
   .withRelated('pets')
@@ -760,7 +760,7 @@ However, because the new design is so different, the entire active record module
 
 Base `Model` will look something like this:
 
-```
+```js
 class Model {
 	constructor: (Gateway, client, attributes) {
 		this.Gateway = Gateway;
@@ -793,7 +793,7 @@ class Model {
 This is how it plugs in:
 
 
-```
+```js
 // This is the default bookshelf.Gateway (just returns plain objects/arrays)
 class Gateway {
 	constructor: (client) {
@@ -910,7 +910,7 @@ bookshelf.Gateway = ModelGateway;
 
 You can also use this same override pattern for parse/format (whether using `ModelGateway` plugin or not).
 
-```
+```js
 class FormattingGateway extends bookshelf.Gateway {
 	
 	unformatted() {
