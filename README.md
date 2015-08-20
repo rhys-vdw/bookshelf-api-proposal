@@ -193,7 +193,7 @@ const People = bookshelf('Mapper').extend({
 
 // Bizarro inheritance/scoping by supplying an 'initializer'.
 bookshelf.registerMapper('People', People);
-bookshelf.initMapper('Australians', People, aus =>
+bookshelf.initMapper('Australians', 'People', aus =>
   aus.where('country', 'australia').drinkingAge(18)
 );
 bookshelf.initMapper('Americans', 'People', {where: {country: 'america'}, drinkingAge: 21});
@@ -202,9 +202,9 @@ bookshelf.initMapper('Americans', 'People', {where: {country: 'america'}, drinki
 bookshelf
 .registerMapper('People', People)
 .initMapper('Australians', 'People', aus =>
-    aus.where('country', 'australia').drinkingAge(18)
+  aus.where('country', 'australia').drinkingAge(18)
 )
-.initMapper('Americans', 'Person', {where: {country: 'america'}, drinkingAge: 21});
+.initMapper('Americans', 'People', {where: {country: 'america'}, drinkingAge: 21});
 
 Americans = bookshelf('Americans');
 Australians = bookshelf('Americans');
