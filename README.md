@@ -107,7 +107,7 @@ class PersonGateway extends bookshelf.Gateway {
 bookshelf('Person', Person);
 ```
 
-Here is a thing you could do:
+##### 'extending' with an initializer callback
 
 ```js
 class Person extends bookshelf.Gateway {
