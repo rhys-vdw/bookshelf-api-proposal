@@ -63,13 +63,15 @@ bookshelf('Person').one().where('id', 5).fetch().then((person) => // ...
 ```js
 // A Mapper definition:
 
-var Person = bookshelf.Mapper.extend({
+// Crazy town - we're extending from an **instance** of `Mapper`. Have to work
+// out what that's going to look like.
+var Person = bookshelf('Mapper').extend({
 
   initialize: function() {
   
     // Configure schema information.
     this.tableName('people').idAttribute('id').relations({
-      house: belongsTo('House'),
+      home: belongsTo('House'),
       children: hasMany('Person', {otherReferencingColumn: 'parent_id'})
     });
   },
@@ -80,32 +82,95 @@ var Person = bookshelf.Mapper.extend({
   },
 });
 
-// Register Mapper.
-bookshelf('Person', Person);
+bookshelf.registerMapper('Person', Person);
 
-// Same thing in ES6 notation.
+// Or like this.
 
-// Note I'm using `getters` here because you can't define properties on
-// the prototype using `class` syntax.
-class PersonMapper extends bookshelf.Mapper {
+bookshelf.registerMapper('Person', bookshelf('Mapper').extend({
   initialize() {
-  	this.tableName('people').idAttribute('id').relations({
-      house: this.belongsTo('House'),
-      children: this.hasMany('Person', 'parent_id');
-  	});
+  	this.tableName('people')
+      .idAttribute('id')
+      .relations({
+        home: belongsTo('House'),
+        children: hasMany('Person', 'parent_id')
+      });
   }
   adults() {
     return this.all().where('age', '>=', 18);
   }
-}
+}));
 
-bookshelf('Person', Person);
+// Or even like this:
+bookshelf.registerMapper('Person', 'Mapper', {
+  initialize() {
+  	this.tableName('people')
+      .idAttribute('id')
+      .relations({
+        home: belongsTo('House'),
+        children: hasMany('Person', 'parent_id')
+      });
+  }
+  adults() {
+    return this.all().where('age', '>=', 18);
+  }
+});
+
+// Or, if you prefer.
+bookshelf.registerMapper('Person', 'Mapper', {
+  initialize() {
+    return {
+      tableName: 'people',
+      idAttribute: 'id',
+      relations: {
+        home: belongsTo('House'),
+        children: hasMany('Person', 'parent_id')
+      };
+    }
+  }
+  adults() {
+    return this.all().where('age', '>=', 18);
+  }
+});
+
+// If you don't need scopes, you can just add an initializer function. (It can
+// return a 'mutations hash' which is applied as functions).
+//
+// TODO: I'd prefer that you could just pass a hash (rather than returning one),
+// but then how can you distinguish it from methods?
+// 
+// Also it's probably just generally confusing that different results of
+// `_.result(initializer)` are treated differently.
+//
+bookshelf.registerMapper('Person', 'Mapper', () => {
+    tableName: 'people',
+    idAttribute: 'id',
+    relations: { home: belongsTo('House') };
+  }
+});
+
+// Or, same deal, but procedural.
+bookshelf.registerMapper('Person', 'Mapper', Person =>
+  Person.tableName('people').idAttribute('id').relations({ home: belongsTo('House') });
+});
+
+// Or to go totally crazy meta:
+bookshelf.registerMapper('Person', 'Mapper', () => {
+    tableName: 'people',
+    idAttribute: 'id',
+    relations: { home: belongsTo('House') },
+    extend: { // Triggers inheritance internally.
+      adults() {
+        return this.all().where('age', '>=', 18);
+      }
+    }
+  }
+});
 ```
 
 ##### 'extending' with an initializer callback
 
 ```js
-class Person extends bookshelf.Mapper {
+const Person = bookshelf('Mapper').extend({
   initialize() {
   	this.tableName('people').idAttribute('id').relations({
       house: this.belongsTo('House'),
@@ -120,12 +185,12 @@ class Person extends bookshelf.Mapper {
   drinkers() {
     return this.all().where('age', '>=', this.getOption('drinkingAge'));
   }
-}
+});
 
 // Bizarro inheritance/scoping by supplying an 'initializer'.
-bookshelf('Person', Person);
-bookshelf('Australians', Person, g => g.drinkingAge(18));
-bookshelf('Americans', 'Person', {drinkingAge: 21});
+bookshelf.registerMapper('Person', Person);
+bookshelf.registerMapper('Australians', Person, g => g.drinkingAge(18));
+bookshelf.registerMapper('Americans', 'Person', () => {drinkingAge: 21});
 
 Americans = bookshelf('Americans');
 Australians = bookshelf('Americans');
@@ -199,8 +264,14 @@ class Mapper {
   //
   // bookshelf('MyModel').getOption('single') -> false
   //
-  constructor(client, options = {}, query = null) {
-    this._client = client;
+  constructor(options = {}, query = null) {
+
+    options = Immutable.fromJS(options).asImmutable();
+
+    if (!options.has('client')) {
+      throw new Error('Cannot create Mapper without `options.client`');
+    }
+
   	this._query = query;
   	
   	// This instance is entirely mutable for the duration
@@ -216,8 +287,15 @@ class Mapper {
   	  relations: {}
   	}).asMutable();
   	
-  	// Now allow extra defaults to be set by inheriting class.
-  	this.withMutations(this.initialize);
+  	// Now allow extra mutations to be set by inheriting class. Typically
+    // setting options or the query.
+    //
+    // NOTE: Doing something weird here. There's a small chance that one of the
+    // mutations might be a call to `Mapper#extend`. If this happens the
+    // returned instance will actually inherit from this object, turning this
+    // constructor call into a factory method.
+    //
+  	const mapper = this.withMutations(this.initialize);
   	
   	// Override those with supplied options. (This is not client facing,
   	// it's for use when mapper instances clone themselves from
@@ -225,10 +303,11 @@ class Mapper {
   	//
   	// Calling `asImmutable()` here locks the instance.
   	//
-  	this._options.merge(Immutable.fromJS(options)).asImmutable();
+  	mapper._options.merge(options).asImmutable();
   	
-  	// Now lock this instance down.
-  	this.asImmutable();
+  	// Now lock it down. We return it in the off chance that `extend` was called
+    // in a callback.
+  	return mapper.asImmutable();
   }
   
   initialize() { /* noop */ }
@@ -269,7 +348,7 @@ class Mapper {
   	// If there was a change, return the new instance.
     return newOptions === this._options
       ? this
-      : new this.constructor(this._client, newOptions, this._query);
+      : new this.constructor(newOptions, this._query);
   }
   
   changeOption(option, setter) {
@@ -394,8 +473,8 @@ class Mapper {
   	if (this._mutable) {
   	  return this;
   	} else {
-  	  const result = new this.constructor(this._client, this._options, this._query.clone());
-	  result._mutable = true;
+  	  const result = new this.constructor(this._options, this._query.clone());
+	    result._mutable = true;
       return result;
   	}
   }
@@ -408,14 +487,45 @@ class Mapper {
   
   // Chain some changes that wont create extra copies.
   withMutations: (callback) {
+
+    // Apply our callback function.
   	if (_.isFunction(callback)) {
+
+      // Deal with a mutable instance. If it was already mutable then
+      // `mapper === this`.
   	  const wasMutable = this._mutable;
-  	  const mutable = this.asMutable(); 
-      callback.bind(mutable)(mutable);
-      mutable._mutable = wasMutable;
-      return mutable;
+
+      // The mutable mapper should be updated in place for all mutations.
+  	  const mapper = this.asMutable(); 
+
+      // Allow config object to be returned.
+      const hash = callback.bind(mapper)(mapper);
+      mapper._applyMutationHash(hash)
+
+      if (!wasMutable) {
+        // Restore previous immutability.
+        mapper.asImmutable();
+      }
+
+      // Return 
+      return mapper;
     }
-    return this;
+
+    if (!_.isPlainObject(callback) || Iterable.isIterable(callback)) {
+      throw new TypeError('Expected `callback` to be of type `Function`, `Object`, or `Immutable.Iterable`');
+    }
+
+    // Now apply hash.
+    return mapper._applyMutationHash(callback)
+  }
+
+  // Definitely should not be called on an immutable mapper.
+  _applyMutationHash: (hash) {
+    let mapper = this;
+    has.forEach((argument, method) =>
+      mapper = mapper[method](argument);
+    );
+    return mapper;
   }
   
   // -- Helper --
@@ -490,19 +600,11 @@ function instantiateMapper(mapper) {
 	return retrieveMapper(mapper);
 }
 
-const bookshelf = function(mapper, Mapper, initializer) {
-
-	// Store a Mapper for later retrieval...
-	if (Mapper instanceof MapperBase) {
-		return storeMapper(mapper, Mapper, initializer);
-	}
-	
-	// ...or instantiate a new Mapper:
-	return instantiateMapper(mapper);
-}
-
-
+const bookshelf = retrieveMapper;
+bookshelf.registerMapper = storeMapper;
 bookshelf.registry = new Map();
+
+export default bookshelf;
 ```
 
 #### Relations
