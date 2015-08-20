@@ -1,22 +1,16 @@
 # Bookshelf Proposal
-## Glossary
-
- - *Active Record* A model instance that represents the state of a row and exposes `save`, `set` etc.
- - *Table Data Gateway*
- 
-## Gateway vs Model and Collection
 
 #### Model and Collection
-Bookshelf implements two main functionalities. An ability to generate queries from an understanding of relationships and tables (table data Gateway), and a way to model row data in domain objects (active record). Currently both of these responsibilities are shared by two classes: `Model` and `Collection`. 
+Bookshelf implements two main functionalities. An ability to generate queries from an understanding of relationships and tables (data gateway), and a way to model row data in domain objects (active records). Currently both of these responsibilities are shared by two classes: `Model` and `Collection`. 
 
 #### Sync
-This is conceptually messy, but also has resulted in code duplication between the two. The internal `Sync` class currently unifies the implementation of query building (table data Gateway). It also allows chaining of query methods by storing state. This means that query state and row state are interwoven in a way that is confusing and non-representative underlying data structure.
+This is conceptually messy, but also has resulted in code duplication between the two. The internal `Sync` class currently unifies the implementation of query building (table data gateway). It also allows chaining of query methods by storing state. This means that query state and row state are interwoven in a way that is confusing and non-representative underlying data structure.
 
 
 
 #### Collections
 
-No more `Collection`s. Result sets are returned as plain arrays. Instead `Gateway` offers an API for bulk `save`, `insert` or `update`.
+No more `Collection`s. Result sets are returned as plain arrays. Instead `Mapper` offers an API for bulk `save`, `insert` or `update`.
 
 ```js
 // No longer doing this:
@@ -25,9 +19,10 @@ Person.collection([fred, bob]).invokeThen('save', null, {method: 'insert'}).then
 Person.collection([fred, bob]).invokeThen('save', {surname: 'Smith'}, {patch: true}).then( //...
 
 // Instead:
-bookshelf('Person').save([fred, bob]).then( // ...
-bookshelf('Person').insert([fred, bob]).then( // ...
-bookshelf('Person').patch([fred, bob], {surname: 'Smith'}).then( //...
+Person = bookshelf('Person')
+Person.save([fred, bob]).then( // ...
+Person.insert([fred, bob]).then( // ...
+Person.patch([fred, bob], {surname: 'Smith'}).then( //...
 ```
 
 This offers a cleaner API, and greatly simplifies the `save` function. `save` currently has a lot of different options and flags, some of which make no sense when used together. Separating `patch` into its own method means that `save` no longer needs to support the `attrs` argument.
@@ -38,7 +33,7 @@ This means no more Lodash helpers and no intelligent `.add()` method.
 
 ### Proposal
 
-#### Gateway
+#### Mapper
 
 Defining table access information (`relations`, `idAttribute`, `tableName`) on `Model` is strange because models are our references to table rows. Ideally models and client code should be using a specific abstracted interface to access the database.
 
@@ -55,7 +50,7 @@ Person.forge({id: 5}).fetch().then((person) => // ...
 
 // -- Proposal --
 
-// Now we create a new `Gateway` chain like this:
+// Now we create a new `Mapper` chain like this:
 bookshelf('Person').all().where('age', '>', 5).fetch().then((people) => // ...
 
 // Or this:
@@ -63,12 +58,12 @@ bookshelf('Person').one().where('id', 5).fetch().then((person) => // ...
 
 ```
 
-`Gateway` takes on most of the current responsibilities of `Model`:
+`Mapper` takes on most of the current responsibilities of `Model`:
 
 ```js
-// A Gateway definition:
+// A Mapper definition:
 
-var Person = bookshelf.Gateway.extend({
+var Person = bookshelf.Mapper.extend({
 
   initialize: function() {
   
@@ -85,14 +80,14 @@ var Person = bookshelf.Gateway.extend({
   },
 });
 
-// Register Gateway.
+// Register Mapper.
 bookshelf('Person', Person);
 
 // Same thing in ES6 notation.
 
 // Note I'm using `getters` here because you can't define properties on
 // the prototype using `class` syntax.
-class PersonGateway extends bookshelf.Gateway {
+class PersonMapper extends bookshelf.Mapper {
   initialize() {
   	this.tableName('people').idAttribute('id').relations({
       house: this.belongsTo('House'),
@@ -110,7 +105,7 @@ bookshelf('Person', Person);
 ##### 'extending' with an initializer callback
 
 ```js
-class Person extends bookshelf.Gateway {
+class Person extends bookshelf.Mapper {
   initialize() {
   	this.tableName('people').idAttribute('id').relations({
       house: this.belongsTo('House'),
@@ -148,11 +143,11 @@ FemaleAustralians.save({name: 'Jane'}, {name: 'Janette'});
 
 ```
 
-Note that I've added a simple filter for `adults` above. Most methods on `Gateway` should be chainable to help build up queries (much like knex).
+Note that I've added a simple filter for `adults` above. Most methods on `Mapper` should be chainable to help build up queries (much like knex).
 
 ```js
-// Example gateway methods.
-class Gateway {
+// Example Mapper methods.
+class Mapper {
 
   // Chainable:
   query(queryCallback)
@@ -181,7 +176,7 @@ Example use:
 
 ```js
 // Get a person from the Smith family, and their house and daughters.
-bookshelf('Person')     // returns Person Gateway instance.
+bookshelf('Person')     // returns Person Mapper instance.
   .withRelated('house')
   .withRelated('children', query => query.where('sex', 'female'))
   .one()
@@ -190,14 +185,14 @@ bookshelf('Person')     // returns Person Gateway instance.
 
 ```
 
-##### Gateway chain state: options, query and client
+##### Mapper chain state: options, query and client
 
-Gateway chains have four properties:
+Mapper chains have four properties:
 
 ```js
 import Immutable, { Iterable } from 'immutable';
 
-class Gateway {
+class Mapper {
 
   // NOTE: client code never calls this constructor. It is called from within
   // the `Bookshelf` instance.
@@ -225,7 +220,7 @@ class Gateway {
   	this.withMutations(this.initialize);
   	
   	// Override those with supplied options. (This is not client facing,
-  	// it's for use when gateway instances clone themselves from
+  	// it's for use when mapper instances clone themselves from
   	// `.query` and `.setOption`).
   	//
   	// Calling `asImmutable()` here locks the instance.
@@ -247,14 +242,14 @@ class Gateway {
       throw new InvalidOption(option, this);
     }
       
-  	// Have to ensure references are immutable. Mutable gateway chains
+  	// Have to ensure references are immutable. Mutable mapper chains
   	// could leak.
   	return Iterable.IsIterable(result)
   		? result.AsImmutable()
   		: result;
   }
   
-  // Change an option on the gateway chain. If 
+  // Change an option on the mapper chain. If 
   setOption(option, value) {
   
   	// The first time we call 'setMutability' on `_options` while mutable,
@@ -431,13 +426,13 @@ class Gateway {
 }
 ```
 
-#### bookshelf(gateway, Gateway, initializer)
+#### bookshelf(mapper, Mapper, initializer)
 Moving the registry plugin to core is integral to the new design.
 
-Currently `Model` is aware of its Bookshelf client (and internal knex db connection) - and can only be reassigned by setting the `transacting` option. This is less flexible than it could be. Now every `Gateway` chain must be initialized via a client object.
+Currently `Model` is aware of its Bookshelf client (and internal knex db connection) - and can only be reassigned by setting the `transacting` option. This is less flexible than it could be. Now every `Mapper` chain must be initialized via a client object.
 
 ```js
-class User extends bookshelf.Gateway { /* ... */ }
+class User extends bookshelf.Mapper { /* ... */ }
 
 // Using `User` directly.
 bookshelf(User).save(newUser);
@@ -446,7 +441,7 @@ bookshelf(User).save(newUser);
 bookshelf('User', User);
 bookshelf('User').where('age', '>', 18).fetch().then((users) =>
 
-// Transaction objects are richer and take `Gateway` constructors similarly.
+// Transaction objects are richer and take `Mapper` constructors similarly.
 bookshelf.transation(trx =>
   trx('User').adults().fetch()
     .then(adults =>
@@ -455,13 +450,13 @@ bookshelf.transation(trx =>
 );
 ```
 
-This simply instantiates a new `Gateway` instance with the correct `client` attached (either a `Bookshelf` or `Transaction` instance).
+This simply instantiates a new `Mapper` instance with the correct `client` attached (either a `Bookshelf` or `Transaction` instance).
 
 
 ```js
-import GatewayBase from './base/Gateway';
+import MapperBase from './base/Mapper';
 
-// Store an instantiated instance of a gateway. It doesn't matter that
+// Store an instantiated instance of a mapper. It doesn't matter that
 // it's an instance because it's immutable. It's kind of the prototype
 // pattern.
 //
@@ -470,44 +465,44 @@ import GatewayBase from './base/Gateway';
 // bookshelf('User', 'Model', user => user.tableName('users').idAttribute('id'));
 //
 // The initializer is applied **after** the constructor is called.
-function storeGateway(name, GatewayConstructor, initializer) {
-    const gateway = instantiateGateway(Gateway);
- 	bookshelf.gatewayMap.set(gateway, gateway.withMutations(initializer));
+function storeMapper(name, MapperConstructor, initializer) {
+  const mapper = instantiateMapper(Mapper);
+ 	bookshelf.registry.set(mapper, mapper.withMutations(initializer));
  	return bookshelf;
 }
 
-// Retrieve a previously stored gateway instance.
+// Retrieve a previously stored mapper instance.
 //
-function retrieveGateway(gateway) {
-	const gateway = bookshelf.gatewayMap.get(gateway);
-	if (!gateway) {
-		throw new Error(`Unknown Gateway: ${Gateway}`)
+function retrieveMapper(mapper) {
+	const mapper = bookshelf.registry.get(mapper);
+	if (!mapper) {
+		throw new Error(`Unknown Mapper: ${Mapper}`)
 	}
-	return gateway;
+	return mapper;
 }
 
-// Gets an immutable instance of either a gateway constructor or a
-// stored gateway.
-function instantiateGateway(gateway) {
-	if (gateway instanceof GatewayBase) {
-		return new gateway(bookshelf);
+// Gets an immutable instance of either a mapper constructor or a
+// stored mapper.
+function instantiateMapper(mapper) {
+	if (mapper instanceof MapperBase) {
+		return new mapper(bookshelf);
 	}
-	return retrieveGateway(gateway);
+	return retrieveMapper(mapper);
 }
 
-const bookshelf = function(gateway, Gateway, initializer) {
+const bookshelf = function(mapper, Mapper, initializer) {
 
-	// Store a Gateway for later retrieval...
-	if (Gateway instanceof GatewayBase) {
-		return storeGateway(gateway, Gateway, initializer);
+	// Store a Mapper for later retrieval...
+	if (Mapper instanceof MapperBase) {
+		return storeMapper(mapper, Mapper, initializer);
 	}
 	
-	// ...or instantiate a new Gateway:
-	return instantiateGateway(gateway);
+	// ...or instantiate a new Mapper:
+	return instantiateMapper(mapper);
 }
 
 
-bookshelf.gatewayMap = new Map();
+bookshelf.registry = new Map();
 ```
 
 #### Relations
@@ -518,15 +513,15 @@ This means relation logic is interpersed throughout all classes.
 
 ##### Proposal
 
-Using `Gateway` relations become much simpler. A `Relation` is an interface that provides some methods: `forOne()`, `forMany()` and `attachMany()`.
+Using `Mapper` relations become much simpler. A `Relation` is an interface that provides some methods: `forOne()`, `forMany()` and `attachMany()`.
 
 For instance:
 
 ```js
 class HasOne {
-  constructor(SelfGateway, OtherGateway, keyColumns) {
-  	this.Self = OtherGateway;
-  	this.Other = OtherGateway;
+  constructor(SelfMapper, OtherMapper, keyColumns) {
+  	this.Self = OtherMapper;
+  	this.Other = OtherMapper;
   	
   	// Should consider how composite keys will be treated here.
   	// This can be done on a per-relation basis.
@@ -538,7 +533,7 @@ class HasOne {
     return this.Self.getAttributes(instance, this.selfKeyColumn);
   }
   
-  // Returns an instance of `Gateway` that will only create correctly
+  // Returns an instance of `Mapper` that will only create correctly
   // constrained models.
   forOne(client, target) {
   	let targetKey = this.getSelfKey(instance);
@@ -580,7 +575,7 @@ class HasOne {
 You can then work with relations like this:
 
 ```js
-bookshelf('User', class extends bookshelf.Gateway {
+bookshelf('User', class extends bookshelf.Mapper {
 	static get tableName() { return 'users' },
 	static get relations() {
 		return {
@@ -644,7 +639,7 @@ function normalizeWithRelated(withRelated) {
 // TODO
 }
 
-class Gateway {
+class Mapper {
   // ...
   related(instance, relationName) {
   	// Either bookshelf instance or transaction.
@@ -655,7 +650,7 @@ class Gateway {
   	
   	// Deliberately doing this check here to simplify relation code.
   	// ie. simplify overrides by giving explit 'one' and 'many' methods.
-  	const gateway = _.isArray(instance)
+  	const mapper = _.isArray(instance)
   	  ? relation.forMany(client, instance)
   	  : relation.forOne(client, instance);
   }
@@ -754,7 +749,7 @@ bookshelf(Person)
 
 ## Active Record Models
 
-Because the core of the proposed API is taken care of by functions of `Gateway` instances, it's possible to use Bookshelf without `Model` instances at all. However, they are still useful and should be enabled by default.
+Because the core of the proposed API is taken care of by functions of `Mapper` instances, it's possible to use Bookshelf without `Model` instances at all. However, they are still useful and should be enabled by default.
 
 However, because the new design is so different, the entire active record module can be separated into its own plugin that overrides hooks used within `forge`, `save`, `update` etc.
 
@@ -762,8 +757,8 @@ Base `Model` will look something like this:
 
 ```js
 class Model {
-	constructor: (Gateway, client, attributes) {
-		this.Gateway = Gateway;
+	constructor: (Mapper, client, attributes) {
+		this.Mapper = Mapper;
 		this.client = client;
 		this.initialize.apply(this, arguments);
 	}
@@ -776,7 +771,7 @@ class Model {
 	load(relation) {}
 	related(relation) {}
 	
-	// Shorthand for `client(Gateway).save(this.attributes, arguments)` etc.
+	// Shorthand for `client(Mapper).save(this.attributes, arguments)` etc.
 	save() {}
 	update() {}
 	insert() {}
@@ -794,8 +789,8 @@ This is how it plugs in:
 
 
 ```js
-// This is the default bookshelf.Gateway (just returns plain objects/arrays)
-class Gateway {
+// This is the default bookshelf.Mapper (just returns plain objects/arrays)
+class Mapper {
 	constructor: (client) {
 		this.option('client', client);
 	}
@@ -852,9 +847,9 @@ class Gateway {
 	// ...
 }
 
-// This is the new ModelGateway, that produces `bookshelf.Model` instances.
+// This is the new ModelMapper, that produces `bookshelf.Model` instances.
 
-class ModelGateway extends bookshelf.Gateway {
+class ModelMapper extends bookshelf.Mapper {
 	
 	get Model() {
 		return bookshelf.Model;
@@ -868,7 +863,7 @@ class ModelGateway extends bookshelf.Gateway {
 		// Allow any processing from other plugins.
 		superRecord = super.createRecord(attributes);
 		
-		// If chained with `.plain()` ModelGateway is bypassed.
+		// If chained with `.plain()` ModelMapper is bypassed.
 		return this.option('plain')
 		  ? superRecord
 		  : this.createModel(super.getAttributes(superRecord));
@@ -902,19 +897,27 @@ class ModelGateway extends bookshelf.Gateway {
 
 // Then we plug it in:
 bookshelf.Model = Model;
-bookshelf.Gateway = ModelGateway;
+bookshelf.Mapper = ModelMapper;
 
 ```
 
 #### Parse/Format
 
-You can also use this same override pattern for parse/format (whether using `ModelGateway` plugin or not).
+You can also use this same override pattern for parse/format (whether using `ModelMapper` plugin or not).
 
 ```js
-class FormattingGateway extends bookshelf.Gateway {
+class FormattingMapper extends bookshelf('Mapper') {
+
+  initialize() {
+    this.formatted();
+  }
+
+  formatted() {
+    return this.setOption('unformatted', false);
+  }
 	
 	unformatted() {
-		return this.option('unformatted', true);
+		return this.setOption('unformatted', true);
 	}
 	
 	formatKey(key) {
@@ -946,8 +949,8 @@ class FormattingGateway extends bookshelf.Gateway {
 }
 
 // Then we plug it in:
-bookshelf.Model = Model;
-bookshelf.Gateway = FormattingGateway;
+bookshelf.registerMapper('Model', Model);
+bookshelf.registerMapper('Mapper', FormattingMapper);
 ```
 
 
