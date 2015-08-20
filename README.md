@@ -63,8 +63,6 @@ bookshelf('Person').one().where('id', 5).fetch().then((person) => // ...
 ```js
 // A Mapper definition:
 
-// Crazy town - we're extending from an **instance** of `Mapper`. Have to work
-// out what that's going to look like.
 var Person = bookshelf('Mapper').extend({
 
   initialize: function() {
@@ -86,21 +84,6 @@ bookshelf.registerMapper('Person', Person);
 
 // Or like this.
 
-bookshelf.registerMapper('Person', bookshelf('Mapper').extend({
-  initialize() {
-  	this.tableName('people')
-      .idAttribute('id')
-      .relations({
-        home: belongsTo('House'),
-        children: hasMany('Person', 'parent_id')
-      });
-  }
-  adults() {
-    return this.all().where('age', '>=', 18);
-  }
-}));
-
-// Or even like this:
 bookshelf.extendMapper('Person', 'Mapper', {
   initialize() {
   	this.tableName('people')
@@ -115,8 +98,23 @@ bookshelf.extendMapper('Person', 'Mapper', {
   }
 });
 
-// Or, if you prefer.
+// Or even like this:
 // Note that 'Mapper' is default, so we don't have to list it as a parent class.
+bookshelf.extendMapper('Person', {
+  initialize() {
+  	this.tableName('people')
+      .idAttribute('id')
+      .relations({
+        home: belongsTo('House'),
+        children: hasMany('Person', 'parent_id')
+      });
+  }
+  adults() {
+    return this.all().where('age', '>=', 18);
+  }
+});
+
+// Or, if you prefer.
 bookshelf.extendMapper('Person', {
   initialize() {
     return {
