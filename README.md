@@ -193,22 +193,24 @@ const People = bookshelf('Mapper').extend({
 
 // Bizarro inheritance/scoping by supplying an 'initializer'.
 bookshelf.registerMapper('People', People);
-bookshelf.initMapper('Australians', People, g => g.drinkingAge(18));
-bookshelf.initMapper('Americans', 'People', {drinkingAge: 21});
+bookshelf.initMapper('Australians', People, aus =>
+  aus.where('country', 'australia').drinkingAge(18)
+);
+bookshelf.initMapper('Americans', 'People', {where: {country: 'america'}, drinkingAge: 21});
 
 // Or, if you prefer:
 bookshelf
-  .registerMapper('People', People);
-  .initMapper('Australians', People, g => g.where('country', 'australia').drinkingAge(18));
-  .initMapper('Americans', 'Person', {country: 'america', drinkingAge: 21});
+.registerMapper('People', People)
+.initMapper('Australians', 'People', aus =>
+    aus.where('country', 'australia').drinkingAge(18)
+)
+.initMapper('Americans', 'Person', {where: {country: 'america'}, drinkingAge: 21});
 
 Americans = bookshelf('Americans');
 Australians = bookshelf('Americans');
 
 Americans.where('sex', 'male').drinkers().query().toString();
 // select users.* from users where country = 'america' and sex = 'male' and age >= 21;
-
-Australians = People.where('country', 'australia').drinkingAge(18);
 
 Australians.drinkers().query().toString();
 // select users.* from users where country = 'australia' and where age >= 18
