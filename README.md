@@ -69,12 +69,17 @@ bookshelf('Person').one().where('id', 5).fetch().then((person) => // ...
 // A Gateway definition:
 
 var Person = bookshelf.Gateway.extend({
-  tableName: 'people',
-  idAttribute: 'id',
-  relations: function() {
-    house: this.belongsTo('House'),
-    children: this.hasMany('Person', {otherReferencingColumn: 'parent_id'})
+
+  initialize: function() {
+  
+    // Configure schema information.
+    this.tableName('people').idAttribute('id').relations({
+      house: belongsTo('House'),
+      children: hasMany('Person', {otherReferencingColumn: 'parent_id'})
+    });
   },
+  
+  // Add scopes if you want.
   adults: function() {
     return this.where('age', '>=', 18);
   },
@@ -88,13 +93,11 @@ bookshelf('Person', Person);
 // Note I'm using `getters` here because you can't define properties on
 // the prototype using `class` syntax.
 class PersonGateway extends bookshelf.Gateway {
-  get tableName() { return 'people'; }
-  get idAttribute() { return 'id'; }
-  get relations() {
-    return {
+  initialize() {
+  	this.tableName('people').idAttribute('id').relations({
       house: this.belongsTo('House'),
       children: this.hasMany('Person', 'parent_id');
-    }
+  	});
   }
   adults() {
     return this.all().where('age', '>=', 18);
@@ -102,6 +105,47 @@ class PersonGateway extends bookshelf.Gateway {
 }
 
 bookshelf('Person', Person);
+```
+
+Here is a thing you could do:
+
+```
+class Person extends bookshelf.Gateway {
+  initialize() {
+  	this.tableName('people').idAttribute('id').relations({
+      house: this.belongsTo('House'),
+      children: this.hasMany('Person', 'parent_id');
+  	});
+  }
+  
+  drinkingAge(age) {
+    return this.setOption('drinkingAge', age);
+  }
+  
+  drinkers() {
+    return this.all().where('age', '>=', this.getOption('drinkingAge'));
+  }
+}
+
+// Bizarro inheritance/scoping by supplying an 'initializer'.
+bookshelf('Person', Person);
+bookshelf('Australians', Person, g => g.drinkingAge(18));
+bookshelf('Americans', 'Person', {drinkingAge: 21});
+
+Americans = bookshelf('Americans');
+Australians = bookshelf('Americans');
+
+Americans.where('sex', 'male').drinkers().query().toString();
+// select users.* from users where sex = 'male' and age >= 21;
+
+Australians.drinkers().query().toString();
+// select users.* from users where age >= 18
+
+// Hm, if `where` called `defaultAttributes` internally we could do this:
+FemaleAustralians = Australians.where('sex', 'female');
+FemaleAustralians.save({name: 'Jane'}, {name: 'Janette'});
+// insert into people (name, sex) values ('Jane', 'female'), ('Janette', 'female');
+
 ```
 
 Note that I've added a simple filter for `adults` above. Most methods on `Gateway` should be chainable to help build up queries (much like knex).
@@ -148,25 +192,47 @@ bookshelf('Person')     // returns Person Gateway instance.
 
 ##### Gateway chain state: options, query and client
 
-Gateway chains have three properties.
+Gateway chains have four properties:
 
 ```
 import Immutable, { Iterable } from 'immutable';
 
 class Gateway {
+
+  // NOTE: client code never calls this constructor. It is called from within
+  // the `Bookshelf` instance.
+  //
+  // bookshelf('MyModel').getOption('single') -> false
+  //
   constructor(client, options = {}, query = null) {
     this._client = client;
   	this._query = query;
+  	
+  	// This instance is entirely mutable for the duration
+  	// of the constructor.
   	this._mutable = true;
   	
-  	this._options = Immutable.fromJS(_.defaults(options, {
+  	// First set defaults.
+  	this._options = Immutable.fromJS({
   	  withRelated: {},
   	  require: false,
   	  single: false,
   	  defaultAttributes: {},
-  	}));
+  	  relations: {}
+  	}).asMutable();
   	
+  	// Now allow extra defaults to be set by inheriting class.
   	this.withMutations(this.initialize);
+  	
+  	// Override those with supplied options. (This is not client facing,
+  	// it's for use when gateway instances clone themselves from
+  	// `.query` and `.setOption`).
+  	//
+  	// Calling `asImmutable()` here locks the instance.
+  	//
+  	this._options.merge(Immutable.fromJS(options)).asImmutable();
+  	
+  	// Now lock this instance down.
   	this.asImmutable();
   }
   
@@ -175,15 +241,35 @@ class Gateway {
   // -- Options --
   
   getOption(option) {
-  	return this._options.get(option);
+  
+    // Options must be initialized before they are accessed.
+    if (!this._options.has(option)) {
+      throw new InvalidOption(option, this);
+    }
+      
+  	// Have to ensure references are immutable. Mutable gateway chains
+  	// could leak.
+  	return Iterable.IsIterable(result)
+  		? result.AsImmutable()
+  		: result;
   }
   
+  // Change an option on the gateway chain. If 
   setOption(option, value) {
   
   	// The first time we call 'setMutability' on `_options` while mutable,
   	// it will return a mutable copy. Each additional call will return the
   	// same instance.
-  	const newOptions = this._setMutability(this._options).set(option, value);
+  	//
+  	// Wrapping the value in `Immutable.fromJS` will cause all Arrays and
+  	// Objects to be converted into their immutable counterparts.
+  	//
+  	// Calls to `_setMutability` and `Immutable.fromJS` will often be
+  	// called redundantly. This is meant to ensure that the fewest possible
+  	// copies are constructed.
+  	//
+  	const newOptions = this._setMutability(this._options)
+  	  .set(option, Immutable.fromJS(value));
   	
   	// If there was a change, return the new instance.
     return newOptions === this._options
@@ -201,24 +287,69 @@ class Gateway {
   
   // -- Options examples --
   
-  withRelated(related, query = noop) {
+  // See relations section for more info on `withRelated`.
+  withRelated(related, query = null) {
+    const normalized = normalizeWithRelated(related, query);
     return this.changeOption('withRelated', (withRelated) => {
-      return _.isObject(related)
-      	? withRelated.merge(related)
-      	: withRelated.set(related, query);
+      return withRelated.mergeDeep(normalized);
     });
   }
   
+  // Do these two in the `withMutations` callback to prevent an extra copy
+  // being made.
   all(ids) {
-    return this.mutate(instance => {
-      instance.setOption('single', false);
+    return this.withMutations(g => {
+      g.setOption('single', false);
       if (!_.isEmpty(ids)) {
-        instance.query(query => query.whereIn(this.idAttribute, ids));
+        g.query(query => query.whereIn(g.idAttribute, ids));
       }
     });
   }
   
   one(id) {
+  	return this.mutate(g => {
+  	  g.setOption('single', true);
+  	  if (id != null) {
+  	  	idAttribute = this.getOption()
+  	  	g.where(this.getOption)
+  	  }
+  	});
+  }
+  
+  // -- Initialization type stuff --
+ 
+  tableName(tableName) {
+    if (_.isEmpty(arguments)) {
+      return this.getOption('tableName');
+    }
+    return this.setOption('tableName', tableName);
+  }
+  
+  idAttribute(idAttribute) {
+    if (_.isEmpty(arguments)) {
+      return this.getOption('idAttribute');
+    }
+  	return this.setOption('idAttribute', idAttribute)
+  }
+  
+  relations(relationName, relation) {
+  
+    // Getter: .relations();
+    if (_.isEmpty(arguments)) {
+      return this.getOption('relations');
+    }
+    
+    // Setter: .relations({projects: hasMany('Project'), posts: hasMany('Post')});
+  	if (_.isObject(relation)) {
+  	  return this.withMutation(g =>
+  	  	_.each(relation, (factory, name) => this.relations(name, factory))
+  	  )
+  	}
+  	
+  	// Setter: .relations('projects', hasMany('Project'));
+  	return this.changeOption('relations', (relations) =>
+  	  relations.set(relationName, relation)
+  	);
   }
   
   // -- Query --
@@ -300,7 +431,7 @@ class Gateway {
 }
 ```
 
-#### bookshelf(Gateway, GatewayConstructor)
+#### bookshelf(gateway, Gateway, initializer)
 Moving the registry plugin to core is integral to the new design.
 
 Currently `Model` is aware of its Bookshelf client (and internal knex db connection) - and can only be reassigned by setting the `transacting` option. This is less flexible than it could be. Now every `Gateway` chain must be initialized via a client object.
@@ -330,35 +461,53 @@ This simply instantiates a new `Gateway` instance with the correct `client` atta
 ```
 import GatewayBase from './base/Gateway';
 
-let bookshelf = function(gateway, Gateway) {
+// Store an instantiated instance of a gateway. It doesn't matter that
+// it's an instance because it's immutable. It's kind of the prototype
+// pattern.
+//
+// Note the initializer. This is so you can do this for simple tables:
+//
+// bookshelf('User', 'Model', user => user.tableName('users').idAttribute('id'));
+//
+// The initializer is applied **after** the constructor is called.
+function storeGateway(name, GatewayConstructor, initializer) {
+    const gateway = instantiateGateway(Gateway);
+ 	bookshelf.gatewayMap.set(gateway, gateway.withMutations(initializer));
+ 	return bookshelf;
+}
+
+// Retrieve a previously stored gateway instance.
+//
+function retrieveGateway(gateway) {
+	const gateway = bookshelf.gatewayMap.get(gateway);
+	if (!gateway) {
+		throw new Error(`Unknown Gateway: ${Gateway}`)
+	}
+	return gateway;
+}
+
+// Gets an immutable instance of either a gateway constructor or a
+// stored gateway.
+function instantiateGateway(gateway) {
+	if (gateway instanceof GatewayBase) {
+		return new gateway(bookshelf);
+	}
+	return retrieveGateway(gateway);
+}
+
+const bookshelf = function(gateway, Gateway, initializer) {
 
 	// Store a Gateway for later retrieval...
 	if (Gateway instanceof GatewayBase) {
-		bookshelf.gatewayMap.set(gateway, Gateway);
-		return Gateway;
+		return storeGateway(gateway, Gateway, initializer);
 	}
 	
-	// ...Otherwise, instantiate a new Gateway:
-	
-	// Handle either identifier or constructor.
-	Gateway = _.isFunction(gateway)
-		? gateway
-		: bookshelf.gateway(gateway);
-	
-	// Create instance with client reference.
-	return = new Gateway(bookshelf);
+	// ...or instantiate a new Gateway:
+	return instantiateGateway(gateway);
 }
 
-bookshelf.gatewayMap = new Map();
 
-bookshelf.gateway = function(gateway) {
-	// Retrieve a previously stored gateway.
-	let Gateway = bookshelf.gatewayMap.get(gateway);
-	if (!Gateway) {
-		throw new Error(`Unknown Gateway: ${Gateway}`)
-	}
-	return Gateway;
-};
+bookshelf.gatewayMap = new Map();
 ```
 
 #### Relations
@@ -458,47 +607,40 @@ Internally `.related()` and `.load()` do something like this:
 ```
 import _, {noop} from 'lodash';
 
-function normalizeWithRelated(value) {
-  if (_.isString(value)) {
-    let result = {};
-    result[value] = _.noop;
-    return result;
-  } else {
-    return value;
-  }
-}
-
-// `thing.other` -> `thing`
-function withRelatedHead(value) {
-  const headRegex = /(.*?)(\.|$)/;
-  return (value.match(headRegex) || [])[1];
-}
-
-// 'thing.other' -> 'other'
-function withRelatedTail(value) {
-  const tailRegex = /(\.|0)(.+?)$/;
-  return (value.match(tailRegex) || [])[2];
-}
-
 /*
-
 Turns
 [
   'some.other',
-  {'some.thing.dude': cba},
-  {friend: cbb},
-  'parents'
+  {'some.thing.dude': queryCallback}, // Maintain the query callback here.
+  {friends: 'adults' }, // Call scopes directly (could also chain ['adults', 'australian'])
+  'parents^'
 ]
 
 Into
 {
-  some:    {callback: noop, nestedRelated: ['other', {'thing.dude': cba]},
-  friend:  {callback: cbb,  nestedRelated: []}
-  parents: {callback: noop, nestedRelated: []}
+  some: {
+  	nested: {
+  		other: {},
+  		thing: {
+  			nested: {
+  				dude: { callback: g => q.query(queryCallback) }
+  			}
+  		}
+  	}
+  }
+  friends: { callback: g => g.adults() }
+  parents: {
+    recursive: true,
+    // always adds one extra for a recursive at the root.
+    // This is how recursive relations can be solved!! :-D
+    nested: {
+      parents: { recursive: true }
+    }
+  
 }
-
 */
-function organizeWithRelated(withRelated) {
+
+function normalizeWithRelated(withRelated) {
 // TODO
 }
 
@@ -508,8 +650,8 @@ class Gateway {
   	// Either bookshelf instance or transaction.
   	const client = this.getOption('client');
   	const relation = _.isString(relationName)
-  		? this.getRelation(relationName)
-  		: relationName;
+  	  ? this.getRelation(relationName)
+  	  : relationName;
   	
   	// Deliberately doing this check here to simplify relation code.
   	// ie. simplify overrides by giving explit 'one' and 'many' methods.
@@ -518,17 +660,16 @@ class Gateway {
   	  : relation.forOne(client, instance);
   }
   
-  load(target) {
-    const withRelated = this.getOption('withRelated').toJS();
-    const organized = organizeWithRelated(withRelated);
+  load(target, related) {
+    const normalized = normalizeWithRelated(related);
     
-    const relationPromises = _.mapValues(grouped, ({callback, nestedRelated}, relationName) => {
+    const relationPromises = _.mapValues(normalized, ({callback, nested}, relationName) => {
       const relation = this.getRelation(relationName);
       const gateway = this.related(target, relation)
-      return gateway.mutate(r =>
+      return gateway.withMutations(r =>
         // Ensure nested relations are loaded.
     	// Optionally apply query callback.
-      	r.all().withRelated(nestedRelated).mutate(callback)
+      	r.all().withRelated(nested).mutate(callback)
       )
       .fetch()
       .then(result => {
@@ -540,6 +681,43 @@ class Gateway {
     
   	Promise.props(relationPromises).return(target);
   }
+  
+  fetch() {
+    const query = this.query();
+    let handler = null;
+    if (this.getOption('single')) {
+    	query.limit(1);
+    }
+    query.bind(this).then(this._handleFetchResponse)
+  }
+  
+  fetchOne(id) {
+  	return this.asMutable().one(id).fetch();
+  }
+  
+  fetchAll(ids) {
+  	return this.asMutable().all(ids).fetch();
+  }
+  
+  _handlefetchResponse(response) {
+    const required = this.getOption('required');
+    const single   = this.getOption('single')
+
+    if (required) {
+	  this._assertFound(response);
+    } 
+    
+    return this.forge(single ? _.head(response) : response);
+  }
+  
+  _assertFound(result) {
+  	if (_.isEmpty(result)) {
+  		const single = this.getOption('single');
+        // Passing `this` allows debug info about query, options, table etc.
+  		throw new (single ? NotFoundError : EmptyError)(this);
+  	}
+  }
+  
   // ...
 }
 ```
