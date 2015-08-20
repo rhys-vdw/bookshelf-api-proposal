@@ -101,7 +101,7 @@ bookshelf.registerMapper('Person', bookshelf('Mapper').extend({
 }));
 
 // Or even like this:
-bookshelf.registerMapper('Person', 'Mapper', {
+bookshelf.extendMapper('Person', 'Mapper', {
   initialize() {
   	this.tableName('people')
       .idAttribute('id')
@@ -116,7 +116,8 @@ bookshelf.registerMapper('Person', 'Mapper', {
 });
 
 // Or, if you prefer.
-bookshelf.registerMapper('Person', 'Mapper', {
+// Note that 'Mapper' is default, so we don't have to list it as a parent class.
+bookshelf.extendMapper('Person', {
   initialize() {
     return {
       tableName: 'people',
@@ -135,13 +136,7 @@ bookshelf.registerMapper('Person', 'Mapper', {
 // If you don't need scopes, you can just add an initializer function. (It can
 // return a 'mutations hash' which is applied as functions).
 //
-// TODO: I'd prefer that you could just pass a hash (rather than returning one),
-// but then how can you distinguish it from methods?
-// 
-// Also it's probably just generally confusing that different results of
-// `_.result(initializer)` are treated differently.
-//
-bookshelf.registerMapper('Person', 'Mapper', () => {
+bookshelf.initMapper('Person', {
     tableName: 'people',
     idAttribute: 'id',
     relations: { home: belongsTo('House') };
@@ -149,20 +144,29 @@ bookshelf.registerMapper('Person', 'Mapper', () => {
 });
 
 // Or, same deal, but procedural.
-bookshelf.registerMapper('Person', 'Mapper', Person =>
-  Person.tableName('people').idAttribute('id').relations({ home: belongsTo('House') });
+bookshelf.initMapper('Person', Person =>
+  Person
+    .tableName('people')
+    .idAttribute('id')
+    .relations({ home: belongsTo('House') });
 });
 
 // Or to go totally crazy meta:
-bookshelf.registerMapper('Person', 'Mapper', () => {
-    tableName: 'people',
-    idAttribute: 'id',
-    relations: { home: belongsTo('House') },
-    extend: { // Triggers inheritance internally.
-      adults() {
-        return this.all().where('age', '>=', 18);
-      }
+bookshelf.initMapper('Person', {
+  tableName: 'people',
+  idAttribute: 'id',
+  relations: { home: belongsTo('House') },
+  extend: { // Triggers inheritance internally.
+    adults() {
+      return this.all().where('age', '>=', 18);
     }
+  }
+});
+
+// If we want to override an already registered model, do so like this:
+bookshelf.extendMapperReplace('Model', {
+  fromLastWeek() {
+    return this.where('created_at', '>=', moment().subtract(1, 'week'));
   }
 });
 ```
@@ -170,12 +174,14 @@ bookshelf.registerMapper('Person', 'Mapper', () => {
 ##### 'extending' with an initializer callback
 
 ```js
-const Person = bookshelf('Mapper').extend({
+const People = bookshelf('Mapper').extend({
   initialize() {
-  	this.tableName('people').idAttribute('id').relations({
-      house: this.belongsTo('House'),
-      children: this.hasMany('Person', 'parent_id');
-  	});
+  	this.tableName('people')
+      .idAttribute('id')
+      .relations({
+        house: this.belongsTo('House'),
+        children: this.hasMany('People', 'parent_id');
+      });
   }
   
   drinkingAge(age) {
@@ -188,18 +194,26 @@ const Person = bookshelf('Mapper').extend({
 });
 
 // Bizarro inheritance/scoping by supplying an 'initializer'.
-bookshelf.registerMapper('Person', Person);
-bookshelf.registerMapper('Australians', Person, g => g.drinkingAge(18));
-bookshelf.registerMapper('Americans', 'Person', () => {drinkingAge: 21});
+bookshelf.registerMapper('People', People);
+bookshelf.initMapper('Australians', People, g => g.drinkingAge(18));
+bookshelf.initMapper('Americans', 'People', {drinkingAge: 21});
+
+// Or, if you prefer:
+bookshelf
+  .registerMapper('People', People);
+  .initMapper('Australians', People, g => g.where('country', 'australia').drinkingAge(18));
+  .initMapper('Americans', 'Person', {country: 'america', drinkingAge: 21});
 
 Americans = bookshelf('Americans');
 Australians = bookshelf('Americans');
 
 Americans.where('sex', 'male').drinkers().query().toString();
-// select users.* from users where sex = 'male' and age >= 21;
+// select users.* from users where country = 'america' and sex = 'male' and age >= 21;
+
+Australians = People.where('country', 'australia').drinkingAge(18);
 
 Australians.drinkers().query().toString();
-// select users.* from users where age >= 18
+// select users.* from users where country = 'australia' and where age >= 18
 
 // Hm, if `where` called `defaultAttributes` internally we could do this:
 FemaleAustralians = Australians.where('sex', 'female');
@@ -522,16 +536,43 @@ class Mapper {
   // Definitely should not be called on an immutable mapper.
   _applyMutationHash: (hash) {
     let mapper = this;
-    has.forEach((argument, method) =>
-      mapper = mapper[method](argument);
+    hash.forEach((argument, method) =>
+      const func = mapper[method];
+      if (!_.isFunction(func)) throw new TypeError(
+        `Expected ${method} to be a function, got '${func}'`
+      );
+
+      mapper = func(argument);
+
+      if (!mapper instanceof this.constructor) throw new TypeError(
+        `Expected mutation hash options to call chainable methods. Returned non-Mapper value '${mapper}'`
+      );
     );
     return mapper;
   }
-  
+
   // -- Helper --
    
   _setMutability(object) {
   	return object[this._mutable ? 'AsMutable' : 'AsImmutable']();
+  }
+
+
+  // -- Extending --
+
+  extend(methods) {
+    // Create a clone of self.
+    class ChildMapper extends this.constructor {
+      constructor(...args) {
+        super(...args);
+      }
+    }
+    
+    // Mix in the new methods.
+    _.extend(ChildMapper.protoype, methods);
+
+    // Instantiate the instance.
+    return new ChildMapper(this._options, this._query.clone());
   }
 }
 ```
@@ -575,33 +616,72 @@ import MapperBase from './base/Mapper';
 // bookshelf('User', 'Model', user => user.tableName('users').idAttribute('id'));
 //
 // The initializer is applied **after** the constructor is called.
-function storeMapper(name, MapperConstructor, initializer) {
-  const mapper = instantiateMapper(Mapper);
- 	bookshelf.registry.set(mapper, mapper.withMutations(initializer));
+
+function doRegister(name, Mapper) {
+ 	bookshelf.registry.set(name, Mapper);
  	return bookshelf;
 }
+
+function doExtendMapper(name, ParentMapper, methods) {
+  if (_.isUndefined(methods)) {
+    methods = ParentMapper;
+    ParentMapper = null;
+  }
+  const parent = ensureMapper(ParentMapper);
+  return doRegister(name, parent.extend(methods));
+}
+
+function doInitMapper(name, ParentMapper, initializer) {
+  if (_.isUndefined(initializer)) {
+    initializer = ParentMapper;
+    ParentMapper = null;
+  }
+  const parent = ensureMapper(ParentMapper);
+  return doRegister(name, ParentMapper.withMutations(initializer));
+}
+
+function assertReplacing(name, shouldExist) {
+  if (shouldExist && !bookshelf.registry.has(name)) {
+    throw new Error(`Cannot replace Mapper '${name}', which is not registered.`);
+  }
+  if (!shouldExist && bookshelf.registry.has(name)) {
+    throw new Error(`Already registered Mapper '${name}'`);
+  }
+}
+
+function registerMapper(name, Mapper) {
+  assertReplacing(name, false);
+  return doRegister(name, Mapper);
+}
+
+function registerMapperReplace(name, Mapper) {
+  assertReplacing(name, true);
+  return doRegister(name, Mapper);
+}
+
+// etc...
+
 
 // Retrieve a previously stored mapper instance.
 //
 function retrieveMapper(mapper) {
 	const mapper = bookshelf.registry.get(mapper);
 	if (!mapper) {
-		throw new Error(`Unknown Mapper: ${Mapper}`)
+		throw new Error(`Unknown Mapper: ${mapper}`)
 	}
 	return mapper;
 }
 
-// Gets an immutable instance of either a mapper constructor or a
-// stored mapper.
-function instantiateMapper(mapper) {
+// Gets an immutable instance of a stored mapper, or the one passed in.
+function ensureMapper(mapper) {
 	if (mapper instanceof MapperBase) {
-		return new mapper(bookshelf);
+		return mapper.asImmutable();
 	}
-	return retrieveMapper(mapper);
+	return retrieveMapper(mapper || 'Mapper');
 }
 
 const bookshelf = retrieveMapper;
-bookshelf.registerMapper = storeMapper;
+bookshelf.registerMapper = registerMapper;
 bookshelf.registry = new Map();
 
 export default bookshelf;
