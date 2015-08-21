@@ -649,7 +649,8 @@ import MapperBase from './base/Mapper';
 // The initializer is applied **after** the constructor is called.
 
 function doRegister(name, Mapper) {
-   bookshelf.registry.set(name, Mapper);
+   // Have to ensure we never register a mutable instance.
+   bookshelf.registry.set(name, Mapper.AsImmutable());
    return bookshelf;
 }
 
@@ -700,18 +701,18 @@ function retrieveMapper(mapper) {
   if (!mapper) {
     throw new Error(`Unknown Mapper: ${mapper}`)
   }
-  return mapper;
+  return mapper.client(this);
 }
 
 // Gets an immutable instance of a stored mapper, or the one passed in.
 function ensureMapper(mapper) {
   if (mapper instanceof MapperBase) {
-    return mapper.asImmutable();
+    return mapper.asImmutable().client(this);
   }
   return retrieveMapper(mapper || 'Mapper');
 }
 
-const bookshelf = retrieveMapper;
+const bookshelf = ensureMapper;
 bookshelf.registerMapper = registerMapper;
 bookshelf.registry = new Map();
 
@@ -731,57 +732,100 @@ Using `Mapper` relations become much simpler. A `Relation` is an interface that 
 For instance:
 
 ```js
+// relations/has-one.js
+
+import {ColumnNaming} from 'bookshelf';
+const {referenceTo} = ColumnNaming;
+
+// FYI:
+class ColumnNaming {
+  static defaultReferenceTo(Mapper, targetColumn) {
+    return `${this.singular(Mapper.tableName())}_${targetColumn}`;
+  }
+}
+
 class HasOne {
-  constructor(SelfMapper, OtherMapper, keyColumns) {
-    this.Self = OtherMapper;
-    this.Other = OtherMapper;
-    
+  constructor(Self, Other, keyColumns) {
+
+    // Allow registry keys instead of actual mapper instances.
+    Other = bookshelf.ensureMapper(this.Other);
+    Self = bookshelf.ensureMapper(this.Self);
+
     // Should consider how composite keys will be treated here.
     // This can be done on a per-relation basis.
-    this.selfKeyColumn = keyColumns['selfKeyColumn'];
-    this.otherReferencingColumn = keyColumns['otherReferencingColumn'];
+    const selfKeyColumn = keyColumns['selfKeyColumn'] || Self.idAttribute();
+    const otherReferencingColumn = keyColumns['otherReferencingColumn'] ||
+      defaultReferenceTo(Self, selfKeyColumn)
+
+    _.extend(this, {Self, Other, selfKeyColumn, otherReferencingColumn});
   }
-  
+
   getSelfKey(instance) {
     return this.Self.getAttributes(instance, this.selfKeyColumn);
   }
-  
+
   // Returns an instance of `Mapper` that will only create correctly
   // constrained models.
   forOne(client, target) {
-    let targetKey = this.getSelfKey(instance);
-    return client(this.Other)
-      // Constrain `select`, `update` etc.
-      .one().where(this.otherReferencingColumn, targetKey)
-      // Set default values for `save` and `forge`.
-      .defaultAttribute(this.otherReferencingColumn, targetKey);
+    const {otherReferencingColumn, Other} = this;
+    const targetKey = this.getSelfKey(target);
+
+    return Other.withMutations(Other =>
+      Other.client(client)
+        // Constrain `select`, `update` etc.
+        .one().where(otherReferencingColumn, targetKey)
+        // Set default values for `save` and `forge`.
+        .defaultAttribute(otherReferencingColumn, targetKey);
+    );
   }
-  
+
   // We need to specialize this for multiple targets. We don't need to
   // worry about setting default attributes for `forge`, as it doesn't
   // really make sense.
   forMany(client, targets) {
-    let targetKeys = _.map(targets, this.getSelfKey, this);
-    return client(this.Other)
-      .all().whereIn(this.otherReferencingColumn, targetKeys);
+    const {otherReferencingColumn, Other} = this;
+    const targetKeys = targets.map(this.getSelfKey, this);
+
+    return Other.withMutations(Other =>
+      Other.client(client).all().whereIn(otherReferencingColumn, targetKeys);
+    );
   }
-  
+
   // Associate retrieved models with targets. Used for eager loading.
-  attachMany(targets, relationName, others) {
-    let Other = this.Other;
-    let Self = this.Self;
-    
-    let othersByKey = _(others)
-      .map(Other.getAttributes, otherProto)
+  attachMany(targets, relationName, otherRecords) {
+    const {Other, Self} = this;
+
+    // Group all the records by the appropriate keys.
+    const recordsByKey = _(otherRecords)
+      .map(Other.getAttributes, Other)
       .groupBy(this.otherReferencingColumn)
       .value();
 
-  return _.each(targets, target => {
-    const selfKey = getSelfKey(target);
-    const other = othersByKey[selfKey] || null;
-    Self.setRelated(target, relationName, other);
-  });
+    // Now attach them to the appropriate targets.
+    return _.each(targets, target => {
+      const selfKey = getSelfKey(target);
+      const other = _.head(recordsByKey[selfKey]) || null;
+      Self.setRelated(target, relationName, other);
+    });
   }
+}
+
+// Partially apply so we can do this:
+//
+// User = Mapper.tableName('users').relations({
+//   projects: hasMany('Project', {otherReferencingKey: 'creator_id'}),
+//   homeAddress: belongsTo('Address', {selfReferencingKey: 'home_adress_id'})
+//   workAddress: belongsTo('Address', {selfReferencingKey: 'work_adress_id'})
+// });
+//
+export default function hasOne(OtherMapper, keyColumns) {
+
+  return class PartiallyAppliedHasOne extends HasOne {
+    constructor(SelfMapper) {
+      super(SelfMapper, OtherMapper, keyColumns);
+    }
+  }
+
 }
 ```
 
