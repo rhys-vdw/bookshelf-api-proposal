@@ -136,10 +136,9 @@ bookshelf.extendMapper('Person', {
 // return a 'mutations hash' which is applied as functions).
 //
 bookshelf.initMapper('Person', {
-    tableName: 'people',
-    idAttribute: 'id',
-    relations: { home: belongsTo('House') };
-  }
+  tableName: 'people',
+  idAttribute: 'id',
+  relations: { home: belongsTo('House') };
 });
 
 // Or, same deal, but procedural.
@@ -148,7 +147,7 @@ bookshelf.initMapper('Person', Person =>
     .tableName('people')
     .idAttribute('id')
     .relations({ home: belongsTo('House') });
-});
+);
 
 // Or to go totally crazy meta:
 bookshelf.initMapper('Person', {
