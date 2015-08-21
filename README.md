@@ -87,7 +87,7 @@ bookshelf.registerMapper('Person', Person);
 
 bookshelf.extendMapper('Person', 'Mapper', {
   initialize() {
-  	this.tableName('people')
+    this.tableName('people')
       .idAttribute('id')
       .relations({
         home: belongsTo('House'),
@@ -103,7 +103,7 @@ bookshelf.extendMapper('Person', 'Mapper', {
 // Note that 'Mapper' is default, so we don't have to list it as a parent class.
 bookshelf.extendMapper('Person', {
   initialize() {
-  	this.tableName('people')
+    this.tableName('people')
       .idAttribute('id')
       .relations({
         home: belongsTo('House'),
@@ -178,7 +178,7 @@ const  { belongsTo, hasMany } = Bookshelf.relations;
 
 const People = bookshelf('Mapper').extend({
   initialize() {
-  	this.tableName('people')
+    this.tableName('people')
       .idAttribute('id')
       .relations({
         house: belongsTo('House'),
@@ -301,22 +301,22 @@ class Mapper {
       throw new Error('Cannot create Mapper without `options.client`');
     }
 
-  	this._query = query;
-  	
-  	// This instance is entirely mutable for the duration
-  	// of the constructor.
-  	this._mutable = true;
-  	
-  	// First set defaults.
-  	this._options = Immutable.fromJS({
-  	  withRelated: {},
-  	  require: false,
-  	  single: false,
-  	  defaultAttributes: {},
-  	  relations: {}
-  	}).asMutable();
-  	
-  	// Now allow extra mutations to be set by inheriting class. Typically
+    this._query = query;
+    
+    // This instance is entirely mutable for the duration
+    // of the constructor.
+    this._mutable = true;
+    
+    // First set defaults.
+    this._options = Immutable.fromJS({
+      withRelated: {},
+      require: false,
+      single: false,
+      defaultAttributes: {},
+      relations: {}
+    }).asMutable();
+    
+    // Now allow extra mutations to be set by inheriting class. Typically
     // setting options or the query.
     //
     // NOTE: Doing something weird here. There's a small chance that one of the
@@ -324,19 +324,19 @@ class Mapper {
     // returned instance will actually inherit from this object, turning this
     // constructor call into a factory method.
     //
-  	const mapper = this.withMutations(this.initialize);
-  	
-  	// Override those with supplied options. (This is not client facing,
-  	// it's for use when mapper instances clone themselves from
-  	// `.query` and `.setOption`).
-  	//
-  	// Calling `asImmutable()` here locks the instance.
-  	//
-  	mapper._options.merge(options).asImmutable();
-  	
-  	// Now lock it down. We return it in the off chance that `extend` was called
+    const mapper = this.withMutations(this.initialize);
+    
+    // Override those with supplied options. (This is not client facing,
+    // it's for use when mapper instances clone themselves from
+    // `.query` and `.setOption`).
+    //
+    // Calling `asImmutable()` here locks the instance.
+    //
+    mapper._options.merge(options).asImmutable();
+    
+    // Now lock it down. We return it in the off chance that `extend` was called
     // in a callback.
-  	return mapper.asImmutable();
+    return mapper.asImmutable();
   }
   
   initialize() { /* noop */ }
@@ -350,31 +350,39 @@ class Mapper {
       throw new InvalidOption(option, this);
     }
       
-  	// Have to ensure references are immutable. Mutable mapper chains
-  	// could leak.
-  	return Iterable.IsIterable(result)
-  		? result.AsImmutable()
-  		: result;
+    // Have to ensure references are immutable. Mutable mapper chains
+    // could leak.
+    return Iterable.IsIterable(result)
+      ? result.AsImmutable()
+      : result;
+  }
+
+  getOptions(...options) {
+    return _(options)
+      .flatten() // Allow either (...options) or options[]
+      .map(option => [option, this.getOption(option)])
+      .zipObject()
+      .value()
   }
   
   // Change an option on the mapper chain. If 
   setOption(option, value) {
   
-  	// The first time we call 'setMutability' on `_options` while mutable,
-  	// it will return a mutable copy. Each additional call will return the
-  	// same instance.
-  	//
-  	// Wrapping the value in `Immutable.fromJS` will cause all Arrays and
-  	// Objects to be converted into their immutable counterparts.
-  	//
-  	// Calls to `_setMutability` and `Immutable.fromJS` will often be
-  	// called redundantly. This is meant to ensure that the fewest possible
-  	// copies are constructed.
-  	//
-  	const newOptions = this._setMutability(this._options)
-  	  .set(option, Immutable.fromJS(value));
-  	
-  	// If there was a change, return the new instance.
+    // The first time we call 'setMutability' on `_options` while mutable,
+    // it will return a mutable copy. Each additional call will return the
+    // same instance.
+    //
+    // Wrapping the value in `Immutable.fromJS` will cause all Arrays and
+    // Objects to be converted into their immutable counterparts.
+    //
+    // Calls to `_setMutability` and `Immutable.fromJS` will often be
+    // called redundantly. This is meant to ensure that the fewest possible
+    // copies are constructed.
+    //
+    const newOptions = this._setMutability(this._options)
+      .set(option, Immutable.fromJS(value));
+    
+    // If there was a change, return the new instance.
     return newOptions === this._options
       ? this
       : new this.constructor(newOptions, this._query);
@@ -415,13 +423,13 @@ class Mapper {
   }
   
   one(id) {
-  	return this.mutate(g => {
-  	  g.setOption('single', true);
-  	  if (id != null) {
-  	  	idAttribute = this.getOption('idAttribute')
-  	  	g.where(idAttribute, id)
-  	  }
-  	});
+    return this.mutate(g => {
+      g.setOption('single', true);
+      if (id != null) {
+        idAttribute = this.getOption('idAttribute')
+        g.where(idAttribute, id)
+      }
+    });
   }
   
   // -- Initialization type stuff --
@@ -437,7 +445,7 @@ class Mapper {
     if (_.isEmpty(arguments)) {
       return this.getOption('idAttribute');
     }
-  	return this.setOption('idAttribute', idAttribute)
+    return this.setOption('idAttribute', idAttribute)
   }
   
   relations(relationName, relation) {
@@ -448,33 +456,33 @@ class Mapper {
     }
     
     // Setter: .relations({projects: hasMany('Project'), posts: hasMany('Post')});
-  	if (_.isObject(relation)) {
-  	  return this.withMutation(g =>
-  	  	_.each(relation, (factory, name) => this.relations(name, factory))
-  	  )
-  	}
-  	
-  	// Setter: .relations('projects', hasMany('Project'));
-  	return this.changeOption('relations', (relations) =>
-  	  relations.set(relationName, relation)
-  	);
+    if (_.isObject(relation)) {
+      return this.withMutation(g =>
+        _.each(relation, (factory, name) => this.relations(name, factory))
+      )
+    }
+    
+    // Setter: .relations('projects', hasMany('Project'));
+    return this.changeOption('relations', (relations) =>
+      relations.set(relationName, relation)
+    );
   }
   
   // -- Query --
   query(method, ...methodArguments) {
   
-  	// Ensure we have a query.
-  	const query = this._query || this._client.knex(this.constructor.tableName);
-  	
-  	// Support `.query()` no argument syntax.
-  	if (_.isEmpty(arguments)) {
-    	return query.clone();
+    // Ensure we have a query.
+    const query = this._query || this._client.knex(this.constructor.tableName);
+    
+    // Support `.query()` no argument syntax.
+    if (_.isEmpty(arguments)) {
+      return query.clone();
     } 
-  	
+    
     // If immutable we must clone the query object.
-  	const newQuery = this._mutable ? query : query.clone();
-  	
-  	// Support string method or callback syntax.
+    const newQuery = this._mutable ? query : query.clone();
+    
+    // Support string method or callback syntax.
     if (_.isString(method)) {
       newQuery[method].apply(newQuery, methodArguments);
     } else {
@@ -490,27 +498,27 @@ class Mapper {
   // -- Query example --
   
   where(filter, ...args) {
-  	// Handle either of these:
-  	// `.where(age, '>', 18)`
-  	// `.where({firstName: 'John', lastName: 'Smith'})`
-  	filter = _.isString(filter)
-  		? this.constructor.attributeToColumn(filter)
-  		: this.constructor.getAttributes(filter);
-  		
-  	return this.query('where', filter, ...args);
+    // Handle either of these:
+    // `.where(age, '>', 18)`
+    // `.where({firstName: 'John', lastName: 'Smith'})`
+    filter = _.isString(filter)
+      ? this.constructor.attributeToColumn(filter)
+      : this.constructor.getAttributes(filter);
+      
+    return this.query('where', filter, ...args);
   }
   
   // -- Utility --
   
   // Create a copy of this instance that is mutable.
   asMutable() {
-  	if (this._mutable) {
-  	  return this;
-  	} else {
-  	  const result = new this.constructor(this._options, this._query.clone());
-	    result._mutable = true;
+    if (this._mutable) {
+      return this;
+    } else {
+      const result = new this.constructor(this._options, this._query.clone());
+      result._mutable = true;
       return result;
-  	}
+    }
   }
   
   // Lock this instance.
@@ -523,14 +531,14 @@ class Mapper {
   withMutations: (callback) {
 
     // Apply our callback function.
-  	if (_.isFunction(callback)) {
+    if (_.isFunction(callback)) {
 
       // Deal with a mutable instance. If it was already mutable then
       // `mapper === this`.
-  	  const wasMutable = this._mutable;
+      const wasMutable = this._mutable;
 
       // The mutable mapper should be updated in place for all mutations.
-  	  const mapper = this.asMutable(); 
+      const mapper = this.asMutable(); 
 
       // Allow config object to be returned.
       const hash = callback.bind(mapper)(mapper);
@@ -574,7 +582,7 @@ class Mapper {
   // -- Helper --
    
   _setMutability(object) {
-  	return object[this._mutable ? 'AsMutable' : 'AsImmutable']();
+    return object[this._mutable ? 'AsMutable' : 'AsImmutable']();
   }
 
 
@@ -641,8 +649,8 @@ import MapperBase from './base/Mapper';
 // The initializer is applied **after** the constructor is called.
 
 function doRegister(name, Mapper) {
- 	bookshelf.registry.set(name, Mapper);
- 	return bookshelf;
+   bookshelf.registry.set(name, Mapper);
+   return bookshelf;
 }
 
 function doExtendMapper(name, ParentMapper, methods) {
@@ -688,19 +696,19 @@ function registerMapperReplace(name, Mapper) {
 // Retrieve a previously stored mapper instance.
 //
 function retrieveMapper(mapper) {
-	const mapper = bookshelf.registry.get(mapper);
-	if (!mapper) {
-		throw new Error(`Unknown Mapper: ${mapper}`)
-	}
-	return mapper;
+  const mapper = bookshelf.registry.get(mapper);
+  if (!mapper) {
+    throw new Error(`Unknown Mapper: ${mapper}`)
+  }
+  return mapper;
 }
 
 // Gets an immutable instance of a stored mapper, or the one passed in.
 function ensureMapper(mapper) {
-	if (mapper instanceof MapperBase) {
-		return mapper.asImmutable();
-	}
-	return retrieveMapper(mapper || 'Mapper');
+  if (mapper instanceof MapperBase) {
+    return mapper.asImmutable();
+  }
+  return retrieveMapper(mapper || 'Mapper');
 }
 
 const bookshelf = retrieveMapper;
@@ -725,11 +733,11 @@ For instance:
 ```js
 class HasOne {
   constructor(SelfMapper, OtherMapper, keyColumns) {
-  	this.Self = OtherMapper;
-  	this.Other = OtherMapper;
-  	
-  	// Should consider how composite keys will be treated here.
-  	// This can be done on a per-relation basis.
+    this.Self = OtherMapper;
+    this.Other = OtherMapper;
+    
+    // Should consider how composite keys will be treated here.
+    // This can be done on a per-relation basis.
     this.selfKeyColumn = keyColumns['selfKeyColumn'];
     this.otherReferencingColumn = keyColumns['otherReferencingColumn'];
   }
@@ -741,21 +749,21 @@ class HasOne {
   // Returns an instance of `Mapper` that will only create correctly
   // constrained models.
   forOne(client, target) {
-  	let targetKey = this.getSelfKey(instance);
-  	return client(this.Other)
-  	  // Constrain `select`, `update` etc.
-  	  .one().where(this.otherReferencingColumn, targetKey)
-  	  // Set default values for `save` and `forge`.
-  	  .defaultAttribute(this.otherReferencingColumn, targetKey);
+    let targetKey = this.getSelfKey(instance);
+    return client(this.Other)
+      // Constrain `select`, `update` etc.
+      .one().where(this.otherReferencingColumn, targetKey)
+      // Set default values for `save` and `forge`.
+      .defaultAttribute(this.otherReferencingColumn, targetKey);
   }
   
   // We need to specialize this for multiple targets. We don't need to
   // worry about setting default attributes for `forge`, as it doesn't
   // really make sense.
   forMany(client, targets) {
-  	let targetKeys = _.map(targets, this.getSelfKey, this);
-  	return client(this.Other)
-  	  .all().whereIn(this.otherReferencingColumn, targetKeys);
+    let targetKeys = _.map(targets, this.getSelfKey, this);
+    return client(this.Other)
+      .all().whereIn(this.otherReferencingColumn, targetKeys);
   }
   
   // Associate retrieved models with targets. Used for eager loading.
@@ -768,11 +776,11 @@ class HasOne {
       .groupBy(this.otherReferencingColumn)
       .value();
 
-	return _.each(targets, target => {
-	  const selfKey = getSelfKey(target);
-	  const other = othersByKey[selfKey] || null;
-	  Self.setRelated(target, relationName, other);
-	});
+  return _.each(targets, target => {
+    const selfKey = getSelfKey(target);
+    const other = othersByKey[selfKey] || null;
+    Self.setRelated(target, relationName, other);
+  });
   }
 }
 ```
@@ -781,12 +789,12 @@ You can then work with relations like this:
 
 ```js
 bookshelf('User', class extends bookshelf.Mapper {
-	static get tableName() { return 'users' },
-	static get relations() {
-		return {
-			projects: this.hasMany('Project', {otherReferencingColumn: 'owner_id'});
-		}
-	}
+  static get tableName() { return 'users' },
+  static get relations() {
+    return {
+      projects: this.hasMany('Project', {otherReferencingColumn: 'owner_id'});
+    }
+  }
 });
 
 user = {id: 5};
@@ -799,7 +807,7 @@ bookshelf('User').related(user, 'projects').save([
   //   { id: 2, owner_id: 5, name: 'projectB' }
   // ]
 });
-	
+  
 ```
 
 Internally `.related()` and `.load()` do something like this:
@@ -819,14 +827,14 @@ Turns
 Into
 {
   some: {
-  	nested: {
-  		other: {},
-  		thing: {
-  			nested: {
-  				dude: { callback: g => q.query(queryCallback) }
-  			}
-  		}
-  	}
+    nested: {
+      other: {},
+      thing: {
+        nested: {
+          dude: { callback: g => q.query(queryCallback) }
+        }
+      }
+    }
   }
   friends: { callback: g => g.adults() }
   parents: {
@@ -847,17 +855,17 @@ function normalizeWithRelated(withRelated) {
 class Mapper {
   // ...
   related(instance, relationName) {
-  	// Either bookshelf instance or transaction.
-  	const client = this.getOption('client');
-  	const relation = _.isString(relationName)
-  	  ? this.getRelation(relationName)
-  	  : relationName;
-  	
-  	// Deliberately doing this check here to simplify relation code.
-  	// ie. simplify overrides by giving explit 'one' and 'many' methods.
-  	const mapper = _.isArray(instance)
-  	  ? relation.forMany(client, instance)
-  	  : relation.forOne(client, instance);
+    // Either bookshelf instance or transaction.
+    const client = this.getOption('client');
+    const relation = _.isString(relationName)
+      ? this.getRelation(relationName)
+      : relationName;
+    
+    // Deliberately doing this check here to simplify relation code.
+    // ie. simplify overrides by giving explit 'one' and 'many' methods.
+    const mapper = _.isArray(instance)
+      ? relation.forMany(client, instance)
+      : relation.forOne(client, instance);
   }
   
   load(target, related) {
@@ -868,35 +876,35 @@ class Mapper {
       const gateway = this.related(target, relation)
       return gateway.withMutations(r =>
         // Ensure nested relations are loaded.
-    	// Optionally apply query callback.
-      	r.all().withRelated(nested).mutate(callback)
+      // Optionally apply query callback.
+        r.all().withRelated(nested).mutate(callback)
       )
       .fetch()
       .then(result => {
         // Get all the models and attach them to the targets.
-    	const targets = _.isArray(target) ? target : [target];
-    	return relation.attachToMany(targets, relationName, models);
+      const targets = _.isArray(target) ? target : [target];
+      return relation.attachToMany(targets, relationName, models);
       })
     });
     
-  	Promise.props(relationPromises).return(target);
+    Promise.props(relationPromises).return(target);
   }
   
   fetch() {
     const query = this.query();
     let handler = null;
     if (this.getOption('single')) {
-    	query.limit(1);
+      query.limit(1);
     }
     query.bind(this).then(this._handleFetchResponse)
   }
   
   fetchOne(id) {
-  	return this.asMutable().one(id).fetch();
+    return this.asMutable().one(id).fetch();
   }
   
   fetchAll(ids) {
-  	return this.asMutable().all(ids).fetch();
+    return this.asMutable().all(ids).fetch();
   }
   
   _handlefetchResponse(response) {
@@ -904,18 +912,18 @@ class Mapper {
     const single   = this.getOption('single')
 
     if (required) {
-	  this._assertFound(response);
+    this._assertFound(response);
     } 
     
     return this.forge(single ? _.head(response) : response);
   }
   
   _assertFound(result) {
-  	if (_.isEmpty(result)) {
-  		const single = this.getOption('single');
+    if (_.isEmpty(result)) {
+      const single = this.getOption('single');
         // Passing `this` allows debug info about query, options, table etc.
-  		throw new (single ? NotFoundError : EmptyError)(this);
-  	}
+      throw new (single ? NotFoundError : EmptyError)(this);
+    }
   }
   
   // ...
@@ -962,31 +970,31 @@ Base `Model` will look something like this:
 
 ```js
 class Model {
-	constructor: (Mapper, client, attributes) {
-		this.Mapper = Mapper;
-		this.client = client;
-		this.initialize.apply(this, arguments);
-	}
-	
-	// Overridable.
-	intialize();
+  constructor: (Mapper, client, attributes) {
+    this.Mapper = Mapper;
+    this.client = client;
+    this.initialize.apply(this, arguments);
+  }
+  
+  // Overridable.
+  intialize();
 
-	// Loading stuff.
-	refresh() {}
-	load(relation) {}
-	related(relation) {}
-	
-	// Shorthand for `client(Mapper).save(this.attributes, arguments)` etc.
-	save() {}
-	update() {}
-	insert() {}
-	patch(attributes) {}
-	destroy() {}
-	
-	// Attribute management.
-	hasChanged(attribute)
-	set(attribute, value)
-	get(attribute)
+  // Loading stuff.
+  refresh() {}
+  load(relation) {}
+  related(relation) {}
+  
+  // Shorthand for `client(Mapper).save(this.attributes, arguments)` etc.
+  save() {}
+  update() {}
+  insert() {}
+  patch(attributes) {}
+  destroy() {}
+  
+  // Attribute management.
+  hasChanged(attribute)
+  set(attribute, value)
+  get(attribute)
 }
 ```
 
@@ -996,112 +1004,123 @@ This is how it plugs in:
 ```js
 // This is the default bookshelf.Mapper (just returns plain objects/arrays)
 class Mapper {
-	constructor: (client) {
-		this.option('client', client);
-	}
-	
-	// ...
-	
-	// Basic record modification methods to be overridden by plugin modules.
-	createRecord(attributes) {
-		return attributes;
-	}
-	
-	setAttributes(record, attributes) {
-		return _.extend(record, attributes);
-	}
-	
-	getAttributes(record) {
-		return record;
-	}
-	
-	setRelated(record, relations) {
-		return _.extend(record, relations);
-	}
-	
-	getRelated(record, relation) {
-		return record[relation];
-	}
-	
-	// Private helper.
-	
-	_forgeOne(attributes) {
-		_.defaults(attributes, this.option('defaultAttributes'));
-		return this.createRecord(attributes);
-	}
-	
-	// Public interface.
-	
-	forge(attributes = {}) {
-	
-		if (_.isArray(attributes)) {
-			let instances = attributes.map(this._forgeOne, this);
-			this.trigger('forged forged:many', instances);
-			return instances;
-		}
-		
-		if (_.isObject(attributes)) {
-			let instance = this._forgeOne(attributes);
-			this.trigger('forged forged:one', instance);
-			return instance;
-		}
-		
-		throw new Error('`attributes` must be instance of Object or Array');
-	}
-	
-	// ...
+  constructor: (client) {
+    this.option('client', client);
+  }
+  
+  // ...
+  
+  // Basic record modification methods to be overridden by plugin modules.
+  createRecord(attributes) {
+    return attributes;
+  }
+  
+  setAttributes(record, attributes) {
+    return _.extend(record, attributes);
+  }
+  
+  getAttributes(record) {
+    return record;
+  }
+  
+  setRelated(record, relations) {
+    return _.extend(record, relations);
+  }
+  
+  getRelated(record, relation) {
+    return record[relation];
+  }
+  
+  // Private helper.
+  
+  _forgeOne(attributes) {
+    _.defaults(attributes, this.option('defaultAttributes'));
+    return this.createRecord(attributes);
+  }
+  
+  // Public interface.
+  
+  forge(attributes = {}) {
+  
+    if (_.isArray(attributes)) {
+      let instances = attributes.map(this._forgeOne, this);
+      this.trigger('forged forged:many', instances);
+      return instances;
+    }
+    
+    if (_.isObject(attributes)) {
+      let instance = this._forgeOne(attributes);
+      this.trigger('forged forged:one', instance);
+      return instance;
+    }
+    
+    throw new Error('`attributes` must be instance of Object or Array');
+  }
+  
+  // ...
 }
 
 // This is the new ModelMapper, that produces `bookshelf.Model` instances.
 
-class ModelMapper extends bookshelf.Mapper {
-	
-	get Model() {
-		return bookshelf.Model;
-	}
+import BaseModel from 'base-model';
 
-	plain() {
-		return this.option('plain', true);
-	}
-	
-	createRecord(attributes) {
-		// Allow any processing from other plugins.
-		superRecord = super.createRecord(attributes);
-		
-		// If chained with `.plain()` ModelMapper is bypassed.
-		return this.option('plain')
-		  ? superRecord
-		  : this.createModel(super.getAttributes(superRecord));
-	}
-	
-	createModel(attributes) {
-		let model = new Model(this.constructor, this.option('client'));
-		return model.set(attributes);
-	}
-	
-	setAttributes(record, attributes) {
-		if (record instanceof bookshelf.Model) {
-			// Allow any processing from other plugins.
-			attributes = super.setAttributes({}, attributes);
-			return record.set(attributes);
-		}
-		return super.setAttributes(record, attributes);
-	}
-	
-	getAttributes(record, attributes) {
-		if (record instanceof bookshelf.Model) {
-			return record.attributes;
-		}
-		return super.getAttributes(record, attributes);
-	}
-	
-	setRelated(record, relations) {
-		...
-	}
+class ModelMapper extends bookshelf.Mapper {
+  
+  initiailize() {
+    this.active().model(bookshelf.Model);
+  }
+
+  model(model) {
+    return this.setOption('model', model);
+  }
+
+  active() {
+    return this.setOption('plain', false);
+  }
+
+  plain() {
+    return this.setOption('plain', true);
+  }
+  
+  createRecord(attributes) {
+    // Allow any processing from other plugins.
+    const superRecord = super.createRecord(attributes);
+
+    const {plain, Model} = this.getOptions('plain', 'Model');
+
+    // If chained with `.plain()`, or no model has been specified.
+    return plain || !Model
+      ? superRecord
+      : new Model(this, this.getAttributes(superRecord));
+  }
+  
+  createModel(Model, attributes) {
+    return 
+  }
+  
+  setAttributes(record, attributes) {
+    if (record instanceof BaseModel) {
+      // Allow any processing from other plugins.
+      attributes = super.setAttributes({}, attributes);
+      return record.set(attributes);
+    }
+    return super.setAttributes(record, attributes);
+  }
+  
+  getAttributes(record, attributes) {
+    if (record instanceof bookshelf.Model) {
+      return record.attributes;
+    }
+    return super.getAttributes(record, attributes);
+  }
+  
+  setRelated(record, relations) {
+    ...
+  }
 }
 
 // Then we plug it in:
-bookshelf.Model = Model;
+bookshelf.Model = BaseModel;
 bookshelf.Mapper = ModelMapper;
 
 ```
@@ -1120,37 +1139,37 @@ class FormattingMapper extends bookshelf('Mapper') {
   formatted() {
     return this.setOption('unformatted', false);
   }
-	
-	unformatted() {
-		return this.setOption('unformatted', true);
-	}
-	
-	formatKey(key) {
-		return _.underscored(key);
-	}
-	
-	parseKey(key) {
-		return _.camelCase(key);
-	}
-	
-	createRecord(attributes) {
-		let record = super.createRecord({});
-		this.setAttributes(record, attributes);
-		return record;
-	}
-	
-	setAttributes(record, attributes) {
-		if (!this.option('unformatted')) {
-			attributes = _.mapKeys(attributes, this.parseKey, this);
-		}
-		return super.setAttributes(record, attributes);
-	}
-	
-	getAttributes(record) {
-		let unformatted = super.getAttributes(record);
-		return this.option('unformatted')
-			? unformatted : _.mapKeys(unformatted, this.formatKey, this);
-	}
+  
+  unformatted() {
+    return this.setOption('unformatted', true);
+  }
+  
+  formatKey(key) {
+    return _.underscored(key);
+  }
+  
+  parseKey(key) {
+    return _.camelCase(key);
+  }
+  
+  createRecord(attributes) {
+    let record = super.createRecord({});
+    this.setAttributes(record, attributes);
+    return record;
+  }
+  
+  setAttributes(record, attributes) {
+    if (!this.option('unformatted')) {
+      attributes = _.mapKeys(attributes, this.parseKey, this);
+    }
+    return super.setAttributes(record, attributes);
+  }
+  
+  getAttributes(record) {
+    let unformatted = super.getAttributes(record);
+    return this.option('unformatted')
+      ? unformatted : _.mapKeys(unformatted, this.formatKey, this);
+  }
 }
 
 // Then we plug it in:
