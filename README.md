@@ -4,9 +4,7 @@
 Bookshelf implements two main functionalities. An ability to generate queries from an understanding of relationships and tables (data gateway), and a way to model row data in domain objects (active records). Currently both of these responsibilities are shared by two classes: `Model` and `Collection`. 
 
 #### Sync
-This is conceptually messy, but also has resulted in code duplication between the two. The internal `Sync` class currently unifies the implementation of query building (table data gateway). It also allows chaining of query methods by storing state. This means that query state and row state are interwoven in a way that is confusing and non-representative underlying data structure.
-
-
+This is conceptually messy and also has resulted in code duplication between the two. The internal `Sync` class currently unifies the implementation of query building (table data gateway). It also allows chaining of query methods by storing state. This means that query state and row state are interwoven in a way that is confusing and non-representative underlying data structure.
 
 #### Collections
 
@@ -42,20 +40,23 @@ Defining table access information (`relations`, `idAttribute`, `tableName`) on `
 
 // Why are we `forge`ing a person here?
 // Note that `Person.where()` calls `forge` internally.
-var Person = require('./person');
-Person.forge().where('age', '>', 5).fetchAll().then((people) => // ...
+var People = require('./person');
+People.forge().where('age', '>', 5).fetchAll().then((people) => // ...
 
 // Or this strange thing:
-Person.forge({id: 5}).fetch().then((person) => // ...
+People.forge({id: 5}).fetch().then((person) => // ...
 
 // -- Proposal --
 
 // Now we create a new `Mapper` chain like this:
-bookshelf('Person').all().where('age', '>', 5).fetch().then((people) => // ...
+bookshelf('People').all().where('age', '>', 5).fetch().then(people => // ...
 
 // Or this:
-bookshelf('Person').one().where('id', 5).fetch().then((person) => // ...
+bookshelf('People').one().where('id', 5).fetch().then(person => // ...
 
+// Or if you want to be really terse:
+People = bookshelf('People')
+People.fetchOne(5).then(person =>
 ```
 
 `Mapper` takes on most of the current responsibilities of `Model`:
