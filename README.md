@@ -172,13 +172,17 @@ bookshelf.extendMapperReplace('Model', {
 ##### 'extending' with an initializer callback
 
 ```js
+import bookshelf from './bookshelf-instance';
+import Bookshelf from 'Bookshelf';
+const  { belongsTo, hasMany } = Bookshelf.relations;
+
 const People = bookshelf('Mapper').extend({
   initialize() {
   	this.tableName('people')
       .idAttribute('id')
       .relations({
-        house: this.belongsTo('House'),
-        children: this.hasMany('People', 'parent_id');
+        house: belongsTo('House'),
+        children: hasMany('People', 'parent_id');
       });
   }
   
