@@ -191,12 +191,15 @@ const People = bookshelf('Mapper').extend({
   }
 });
 
-// Bizarro inheritance/scoping by supplying an 'initializer'.
 bookshelf.registerMapper('People', People);
+
+// Bizarro inheritance/scoping by supplying an 'initializer'.
 bookshelf.initMapper('Australians', 'People', aus =>
   aus.where('country', 'australia').drinkingAge(18)
 );
-bookshelf.initMapper('Americans', 'People', {where: {country: 'america'}, drinkingAge: 21});
+bookshelf.initMapper('Americans', 'People',
+  {where: {country: 'america'}, drinkingAge: 21}
+);
 
 // Or, if you prefer:
 bookshelf
@@ -204,7 +207,9 @@ bookshelf
 .initMapper('Australians', 'People', aus =>
   aus.where('country', 'australia').drinkingAge(18)
 )
-.initMapper('Americans', 'People', {where: {country: 'america'}, drinkingAge: 21});
+.initMapper('Americans', 'People',
+  {where: {country: 'america'}, drinkingAge: 21}
+);
 
 Americans = bookshelf('Americans');
 Australians = bookshelf('Americans');
@@ -266,7 +271,13 @@ bookshelf('Person')     // returns Person Mapper instance.
 
 ##### Mapper chain state: options, query and client
 
-Mapper chains have four properties:
+Mapper chains have two main state objects. The `query`, and their `options` map.
+Additionally they have a flag that states whether they are currently mutible or
+not.
+
+Mappers can be made mutible temporarily for bulk changes. This is not something
+a user would typically do, as other helper methods are available for bulk
+changes. eg. `Mapper#withMutations`, or `Bookshelf#initMapper`.
 
 ```js
 import Immutable, { Iterable } from 'immutable';
@@ -385,11 +396,16 @@ class Mapper {
   
   // Do these two in the `withMutations` callback to prevent an extra copy
   // being made.
+  //
+  // Might prefer defer these IDs until `fetch` is called and then pass them
+  // through a simple hook that can be overridden. Then we can use an identity
+  // map to grab cached instances if desired.
   all(ids) {
-    return this.withMutations(g => {
-      g.setOption('single', false);
+    return this.withMutations(mapper => {
+      mapper.setOption('single', false);
       if (!_.isEmpty(ids)) {
-        g.query(query => query.whereIn(g.idAttribute, ids));
+        idAttribute = this.getOption('idAttribute')
+        mapper.query('whereIn', idAttribute, ids);
       }
     });
   }
@@ -398,8 +414,8 @@ class Mapper {
   	return this.mutate(g => {
   	  g.setOption('single', true);
   	  if (id != null) {
-  	  	idAttribute = this.getOption()
-  	  	g.where(this.getOption)
+  	  	idAttribute = this.getOption('idAttribute')
+  	  	g.where(idAttribute, id)
   	  }
   	});
   }
@@ -577,27 +593,30 @@ class Mapper {
 }
 ```
 
-#### bookshelf(mapper, Mapper, initializer)
+#### bookshelf(mapper)
 Moving the registry plugin to core is integral to the new design.
 
 Currently `Model` is aware of its Bookshelf client (and internal knex db connection) - and can only be reassigned by setting the `transacting` option. This is less flexible than it could be. Now every `Mapper` chain must be initialized via a client object.
 
 ```js
-class User extends bookshelf.Mapper { /* ... */ }
 
 // Using `User` directly.
-bookshelf(User).save(newUser);
+bookshelf('User').save(newUser);
 
 // Registering and reusing (helps break `require()` dependency cycles).
-bookshelf('User', User);
 bookshelf('User').where('age', '>', 18).fetch().then((users) =>
 
-// Transaction objects are richer and take `Mapper` constructors similarly.
+// Transaction objects are richer and take `Mapper` objects similarly.
 bookshelf.transation(trx =>
   trx('User').adults().fetch()
     .then(adults =>
       trx('User').patch(adults, {is_adult: true});
     )
+);
+
+StrictUser = User.require();
+StrictUser.one(12).fetch().catch(NotFoundError, error =>
+  console.error('User with ID 12 not found!')
 );
 ```
 
