@@ -94,6 +94,11 @@ Users.idAttribute('user_id').identify([
 Users.identify({id: 10, name: 'John'});
 // -> 10
 
+// Check for presence of `idAttribute` to determine whether a model was
+// retrieved from the database.
+Users.isNew({id: null, name: 'Samantha'}) // -> true
+Users.isNew({id: 5, name: 'Georgia'}) // -> false
+
 // Works with composite keys.
 const Membership = Mapper.table('groups_users').idAttribute(['group_id', 'user_id']);
 Membership.identify([
@@ -418,18 +423,420 @@ These fields now exist on the `bookshelf.Relations` object.
 import Bookshelf, {Relations} from bookshelf;
 
 // You can just use the relations you need.
-{hasMany, belongsTo} = Relations;
+{hasMany, belongsTo, belongsToAndHasMany} = Relations;
 ```
 
 #### Definition
 
+Relations are added to a `Mapper` via the `.relations()` setter.
+
 ```js
+Staff = bookshelf('Mapper').table('staff').relations({
+  department: belongsTo('Department'),
+  teamMates: belongsToAndHasMany('Staff').through('ProjectMemberships'),
+  projects: belongsToAndHasMany('Project').through('ProjectMemberships'),
+  ownedProjects: hasMany('Project', {otherReferencingKey: 'owner_id'}),
+  boss: belongsTo('Staff', {selfReferencingKey: 'superior_id'})
+});
+
+bookshelf.registerMapper('Staff', Staff);
+
+// Or like this:
+
 bookshelf.initMapper('Staff', {
   table: 'staff',
   relations: {
-    projects: hasMany('Project', {otherReferencingKey: 'creator_id'}),
-    workplace: belongsTo('Building', {selfReferencingKey: 'work_adress_id'}),
-    teamMates: belongsToAndHasMany('Staff').through('ProjectMemberships')
+    department: belongsTo('Department'),
+    teamMates: belongsToAndHasMany('Staff').through('ProjectMemberships'),
+    projects: belongsToAndHasMany('Project').through('ProjectMemberships'),
+    ownedProjects: hasMany('Project', {otherReferencingKey: 'owner_id'}),
+    boss: belongsTo('Staff', {selfReferencingKey: 'superior_id'})
   }
 });
 ```
+
+#### Loading related data
+
+Relations provide an interface to generate Mappers that can access and create
+matching records.
+
+##### Fetching and persisting relations
+
+```js
+.related(record, relationName)
+```
+
+Calling `.related` will return a `Mapper` configured to create and modify records
+pertaining to its specific relation.
+
+```js
+const Staff = bookshelf('Staff');
+
+const john = {id: 5, name: 'John', boss_id: 3};
+const sarah = {id: 3, name: 'Sarah', boss_id: null};
+
+Staff.related(john, 'projects').fetch().then(projects =>
+// SQL: select projects.*
+//      from projects
+//      inner join projects_staff on projects.id = projects_staff.project_id
+//      where projects_staff.staff_id = 5;
+// -> [
+//      {id: 6, name: 'Install Node.js',  owner_id: 3},
+//      {id: 7, name: 'Learn JavaScript', owner_id: 5}
+//    ]
+
+SarahsProjects = Staff.related(sarah, 'ownedProjects');
+
+// Create a new projects.
+SarahsProjects.save({name: 'Bookshelf.js project'}).then(saved =>
+// SQL: insert into projects (name, owner_id) values ('Bookshelf.js project', 3);
+// -> {id: 8, name: 'Bookshelf...', owner_id: 3}
+
+SarahsProjects.fetch().then(sarahsProjects =>
+// SQL: select project.* from projects where owner_id = 3;
+// -> [{id: 8, name: 'Bookshelf...', owner_id: 3}, {id: 6, name: 'Install...', owner_id: 3}]
+```
+
+It's also possible to get relations for multiple records at the same time:
+
+```js
+// Get all immediate bosses of members of a project with ID 8.
+Project.related({id: 8}, 'members').fetch().then(members => {
+  assert.deepEqual(members, [
+    {id: 1, name: 'Peter', boss_id: 3},
+    {id: 5, name: 'John', boss_id: 3},
+    {id: 4, name: 'Gavin', boss_id: 1}
+  ]);
+
+  return Staff.related(members, 'boss').fetch()
+
+}).then(bosses => {
+
+    assert.deepEqual(bosses, [
+    {id: 3, name: 'Sarah', boss_id: null},
+    {id: 1, name: 'Peter', boss_id: 3}
+  ]);
+
+})
+
+// The above might be written more compactly as:
+Project.related(8, 'members.bosses').fetch().then(bosses =>
+```
+
+##### Eager loading 
+
+Eager loading allows loading a record with its relations attached.
+
+Methods used to control eager loading are:
+
+###### `.load(target, relations)`
+
+Load relations onto an existing record `target`. Returns a promise resolving
+to the extended record.
+
+```js
+Projects.fetch(8)
+.then(project => Projects.load(project, 'members'))
+.then(project =>
+  assert.deepEqual(project, {
+    id: 8,
+    name: 'Bookshelf project',
+    members: [
+      {id: 1, name: 'Peter', boss_id: 3},
+      {id: 5, name: 'John', boss_id: 3},
+      {id: 4, name: 'Gavin', boss_id: 1}
+    ]
+  });
+)
+```
+
+###### `withRelated(relations)`
+
+Sets an option on the Mapper to always fetch the given relations when fetching
+records. The records returned extended as if `.load` had been called.
+
+```js
+Project.withRelated(['members.boss', 'owner.boss']).fetch(8).then(project =>
+  assert.deepEqual(project, {
+    id: 8,
+    name: 'Bookshelf.js project',
+    members: [
+      {id: 1, name: 'Peter', boss_id: 3, boss: {id: 3, name: 'Sarah'}},
+      {id: 5, name: 'John',  boss_id: 3, boss: {id: 3, name: 'Sarah'}},
+      {id: 4, name: 'Gavin', boss_id: 1, boss: {id: 1, name: 'John' }}
+    ]
+    owner: {id: 3, name: 'Sarah', boss_id: null, boss: null}
+  });
+);
+```
+
+###### Recursive relationships
+
+```js
+// Fetch staff member Gavin with up to next three levels of bosses.
+Staff.withRelated('boss^3').fetch(4).then(gavin =>
+  assert.deepEqual(gavin, {
+    id: 4,
+    name: 'Gavin',
+    boss_id: 1,
+    boss: {
+      id: 1,
+      name: 'John',
+      boss_id: 3,
+      boss: {
+        id: 3,
+        name: 'Sarah',
+        boss_id: null,
+        boss: null
+      }
+    }
+  }) 
+);
+```
+
+###### Relation initializer
+
+You can rescope relations with a callback.
+
+```js
+bookshelf
+.initMapper('Review', { table: 'reviews' });
+.inheritMapper('Accounts', {
+  initialize() { return {
+    table: 'accounts',
+    relations: {
+      reviews: hasMany('Review')
+    }
+  }},
+  favourites() {
+    return this.where('stars', '>', 4);
+  }
+})
+
+const myAccount = {id: 2, name: 'Rhys'};
+
+const MyFavourites = Accounts.related(myAccount, 'reviews', (Reviews) =>
+  Reviews.where('stars', '>', 4)
+);
+
+// or (map arguments to mutator methods)
+
+const MyFavourites = Accounts.related(myAccount, 'reviews', {
+  'where' ['stars', '>', 4]
+);
+
+// or (array of scope methods to be called without arguments).
+
+const MyFavourites = Accounts.related(myAccount, 'reviews', ['favourites']);
+```
+
+###### Relation DSL
+
+```js
+.withRelated(relations, [initializer]);
+.withRelationTree(relationTree);
+```
+
+Relations can be any of the following values:
+
+ - `true` - include all relations unmodified.
+ - `string` - A relation name, or a description of nested relations in the
+              simple DSL.
+ - `Object` - A hash of relation DSL keys with initializers as values.
+ - `RelationTree` - Normalized representation of the relation request.
+ - `Array` - An array of any of the above applied additively to request multiple
+             relations.
+
+All of the above can be compiled into a `RelationTree` using `normalize`, which
+is Bookshelf's internal representation.
+
+As a user, it's not important to understand how `RelationTree` works as a user,
+just how to supply the arguments. This is essentially the same as the current
+API, but the callbacks now apply to the `Mapper` object rather than the underlying
+`QueryBuilder` (This can still be access via `Mapper#query()`).
+
+Examples of relations:
+
+**relations: simple string**
+
+```js
+Staff.withRelated('department').fetch(5).then(staff =>
+Staff.withRelated(['department', 'projects']).fetch(5).then(staff =>
+
+// relation tree:
+assert.deepEqual(
+  Relations.normalize('department'),
+  {department: {}}
+);
+
+assert.deepEqual(
+  Relations.normalize(['department', 'projects']),
+  {department: {}, projects: {}}
+);
+```
+
+**relations: nested string**
+
+```js
+Staff.withRelated('projects.clients').all([5, 4, 1]).fetch().then(staff =>
+
+// relation tree:
+assert.deepEqual(
+  Relations.normalize('projects.clients'),
+  {
+    projects: {
+     nested: {clients: {}}
+    }
+  }
+);
+```
+
+**relations: recursive relations**
+```js
+Staff.load(staffMember, 'boss^').then(staffMember
+Staff.load(staffMember, 'boss^8').then(staffMember
+
+
+const twoAboveTree = Relations.normalize('boss^');
+
+// relation tree:
+assert.deepEqual(twoAboveTree, {
+  boss: {
+    nested: {
+      boss: { recursions: 1 }
+    }
+  }
+});
+
+const tenAboveTree = Relations.normalize('boss^10');
+
+// relation tree:
+assert.deepEqual(tenAboveTree, {
+  boss: {
+    nested: {
+      boss: { recursions: 10 }
+    }
+  }
+});
+
+// Normalize extends recursive relations automatically.
+const nestedBoss = Relations.normalize(tenAboveTree.boss.nested);
+assert.deepEqual(nestedBoss, {
+  boss: {
+    recursions: 10
+    nested: {
+      boss: { recursions: 9 }
+    }
+  }
+});
+```
+
+**relations: true**
+
+```js
+Staff.withRelated(true).fetchOne(5).then(staffMember =>
+
+// True is expended internally to:
+// this.getOption('relations').keys() ->
+relations = ['department', 'teamMates', 'projects', 'ownedProjects', 'boss']
+
+// relation tree:
+assert.deepEqual(
+  Relations.normalize(relations),
+  { departments: {}, teamMates: {}, projects: {}, ownedProjects: {}, boss: {} }
+);
+```
+
+**relations: intializer**
+
+Supply an intializer to modify the Mapper returned by the relation.
+
+```js
+Staff.withRelated('teamMates', TeamMates =>
+  TeamMates.whereNull('boss_id').where('title', 'programmer')
+).fetch(staffMember);
+
+// or, equivalently:
+
+Staff.withRelated('teamMates', {
+  whereNull: 'boss_id'
+  where: ['title', 'programmer']
+}).fetch(staffMember);
+
+
+// relation tree:
+assert.deepEqual(
+  Relations.normalize(relations),
+  {teamMates: {initializer: Function}}
+);
+```
+
+The initializer can also be an array of scopes:
+
+```js
+bookshelf.extendMapper('Staff', {
+  initialize() { return {
+    table: 'staff',
+    relations: {
+      teamMates: hasMany('Staff').through('Project')
+    }
+  }},
+  fullTime() {
+    return this.query(query =>
+      query.join('contracts', 'contracts.id', this.prefixColumn('contract_id'));
+    );
+  }
+})
+
+// Get all full time staff who are in a team with either bob or james.
+Staff.withRelated('teamMates', ['fullTime']).all(bob, james).fetch();
+```
+
+**relations: Object**
+
+Similar to initializer array (see above), but takes arguments to be passed to setters.
+
+```js
+Author.withRelated({
+  comments: ['fromLastWeek']}
+  articles: ['orderByAscending', 'created_at']
+).fetchAll();
+```
+
+**relations: Aliasing relations**
+
+Sometime you might want to do this:
+
+```js
+Author.withRelated('articles as favouriteArticle', [
+  'one',
+  {orderByAscending: 'popularity'}
+]);
+```
+
+You can even use this to skip relations:
+
+```js
+// Get all record labels that have released a Black Sabbath album.
+Band
+  .where(name: 'Black Sabbath')
+  .withRelated('(albums.recordLabel) as recordLabels')
+  .fetchOne()
+
+Staff
+  .where(name: 'Gavin')
+  .withRelated('(boss^Infinity) as ceo')
+
+// Don't know about the syntax, but might as well consider every conceivable use
+// case while we're here.
+
+Bands
+  .where(name: 'Black Sabbath')
+  .withRelated(['(albums.recordLabel) as recordLabels', {
+    'recordLabels::albums': ['where', 'singer', 'Ozzy Osbourne']
+  }])
+  .fetchOne()
+```
+
+
+

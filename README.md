@@ -258,8 +258,8 @@ class Mapper {
   getOption(option)  // (for internal use)
 
   getAttributes(records, attributes)
-  identify(record)
   identify(records)
+  identifyBy(records, attributes)
   isNew(record)
 }
 
@@ -737,80 +737,82 @@ For instance:
 ```js
 // relations/has-one.js
 
-import {ColumnNaming} from 'bookshelf';
-const {referenceTo} = ColumnNaming;
-
-// FYI:
-class ColumnNaming {
-  static defaultReferenceTo(Mapper, targetColumn) {
-    return `${this.singular(Mapper.tableName())}_${targetColumn}`;
-  }
-}
-
 class HasOne {
   constructor(Self, Other, keyColumns) {
     _.extend(this, {Self, Other, keyColumns});
   }
 
-  selfKeyColumn(client) {
-    return keyColumns['selfKeyColumn'] || (
-      keyColumns['selfKeyColumn'] = client(Self).idAttribute()
-    );
-  }
+  defaultKey(Self, Other, name) { switch (name) {
+    case 'selfKeyColumn':
+      return Self.idAttribute()
+    case 'otherReferencingColumn':
+      const table = Other.getOption('table');
+      const column = this.key(Self, 'selfKeyColumn');
+      return `${this.singular(table)}_${column}`;
+    default:
+      throw new Error(`Unrecognized key name: ${name}`);
+  }}
 
-  otherReferencingColumn(client) {
-    return keyColumns['otherReferencingColumn'] || (
-      keyColumns['otherReferencingColumn'] = ColumnNaming.defaultReferenceTo(
-        client(Self), selfKeyColumn()
-      )
-    );
-  }
-
-  getSelfKey(client, instance) {
-    return client(this.Self).getAttributes(instance, this.selfKeyColumn);
+  key(Self, Other, name) {
+    return keyColumns[name] || (keyColumns[name] = this.defaultKey(Mapper, name));
   }
 
   // Returns an instance of `Mapper` that will only create correctly
   // constrained models.
   forOne(client, target) {
-    const {otherReferencingColumn, Other} = this;
-    const targetKey = this.getSelfKey(client, target);
+    const Self = client(this.Self);
+    const Other = client(this.Other);
+    const otherColumn = this.key(Self, Other, 'otherReferencingColumn');
+    const selfColumn = this.key(Self, Other, 'selfKeyColumn');
+    const selfId = Self.identifyBy(target, selfColumn);
 
     return Other.withMutations(Other =>
-      Other.client(client)
+        Other
         // Constrain `select`, `update` etc.
-        .one().where(otherReferencingColumn, targetKey)
+        .one().where(otherColumn, selfId)
         // Set default values for `save` and `forge`.
-        .defaultAttribute(otherReferencingColumn, targetKey);
+        .defaultAttribute(otherColumn, selfId);
     );
   }
 
-  // We need to specialize this for multiple targets. We don't need to
-  // worry about setting default attributes for `forge`, as it doesn't
-  // really make sense.
+  // We need to specialize this for multiple targets.
+  //
+  // We don't need to worry about setting default attributes for `forge`, as it
+  // doesn't really make sense.
+  //
+  // We could however add a validator for the `otherColumn` that rejects any
+  // models saved without an ID from `selfIds`.
   forMany(client, targets) {
-    const {otherReferencingColumn, Other} = this;
-    const targetKeys = targets.map(_.partial(this.getSelfKey, client), this);
+    const Self = client(this.Self);
+    const Other = client(this.Other);
+    const otherColumn = this.key(Self, Other, 'otherReferencingColumn');
 
-    return Other.withMutations(Other =>
-      Other.client(client).all().whereIn(otherReferencingColumn, targetKeys);
-    );
+    if (targets != null) {
+      const selfColumn = this.key(Self, Other, 'selfKeyColumn');
+      const selfIds = Self.identifyBy(targets, selfColumn);
+      return Other.whereIn(otherColumn, selfIds)
+    }
+
+    return Other.whereNotNull(otherColumn);
   }
 
   // Associate retrieved records with targets. Used for eager loading.
-  attachMany(targets, relationName, otherRecords) {
-    const {Other, Self} = this;
+  attachMany(client, targets, relationName, otherRecords) {
+    const Other = client(this.Other);
+    const Self = client(this.Self);
+    const selfColumn = this.selfReferencingKey()
+    const otherColumn = this.otherReferencingColumn()
 
     // Group all the records by the appropriate keys.
-    const recordsByKey = _(otherRecords)
-      .map(Other.getAttributes, Other)
-      .groupBy(this.otherReferencingColumn)
-      .value();
+    const recordsById = new Map();
+    otherRecords.forEach(record =>
+      recordsById.set(Other.identifyBy(record, otherReferencingColumn), record);
+    )
 
     // Now attach them to the appropriate targets.
     return _.each(targets, target => {
-      const selfKey = getSelfKey(target);
-      const other = _.head(recordsByKey[selfKey]) || null;
+      const selfKey = selfKeyColumn(target);
+      const other = recordsByKey.get(selfKey) || null;
       Self.setRelated(target, relationName, other);
     });
   }
@@ -867,13 +869,14 @@ Internally `.related()` and `.load()` do something like this:
 ```js
 import _, {noop} from 'lodash';
 
+User.load(someGuy, ['friends', 'some.other'])
 /*
 Turns
 [
   'some.other',
   {'some.thing.dude': queryCallback}, // Maintain the query callback here.
   {friends: 'adults' }, // Call scopes directly (could also chain ['adults', 'australian'])
-  'parents^'
+  'parents^5'
 ]
 
 Into
@@ -890,13 +893,13 @@ Into
   }
   friends: { callback: g => g.adults() }
   parents: {
-    recursive: true,
+    recursions: 5,
     // always adds one extra for a recursive at the root.
     // This is how recursive relations can be solved!! :-D
     nested: {
-      parents: { recursive: true }
+      parents: { recursions: 4 }
     }
-  
+  }
 }
 */
 
@@ -907,8 +910,8 @@ function normalizeWithRelated(withRelated) {
 class Mapper {
 
   // ...
-  related(instance, relationName) {
-    // Either bookshelf instance or transaction.
+  related(target, relationName) {
+    // Either bookshelf target or transaction.
     const client = this.getOption('client');
     const relation = _.isString(relationName)
       ? this.getRelation(relationName)
@@ -916,9 +919,9 @@ class Mapper {
 
     // Deliberately doing this check here to simplify relation code.
     // ie. simplify overrides by giving explit 'one' and 'many' methods.
-    const mapper = _.isArray(instance)
-      ? relation.forMany(client, instance)
-      : relation.forOne(client, instance);
+    const mapper = _.isArray(target)
+      ? relation.forMany(client, target)
+      : relation.forOne(client, target);
   }
 
   load(target, related) {
@@ -952,11 +955,11 @@ class Mapper {
   }
 
   fetchOne(id) {
-    return this.asMutable().one(id).fetch();
+    return this.one(id).fetch();
   }
 
   fetchAll(ids) {
-    return this.asMutable().all(ids).fetch();
+    return this.all(ids).fetch();
   }
 
   _handlefetchResponse(response) {
@@ -967,7 +970,8 @@ class Mapper {
       this._assertFound(response);
     } 
 
-    return this.forge(single ? _.head(response) : response);
+    const attributesChain = _(response).map(this.columnsToAttributes)
+    return this.forge((single ? attributesChain.head() : response).value());
   }
 
   _assertFound(result) {
@@ -1025,19 +1029,22 @@ class Mapper {
     return isList(this.getOption('idAttribute'));
   }
 
-  identify(records, idAttribute) {
+  identify(records) {
+    return this.identifyBy(records, this.getOption('idAttribute'));
+  }
 
+  identifyBy(
     // If records is an array it might be multiple records. However, if the
     // first element of the array is either an object or an array (ie. not
     // a valid key value) we assume that this a collection.
     return _.isArray(records) && _(records).head().isObject()
-      ? this.identifyAll(records, idAttribute)
-      : this.identifyOne(records, idAttribute);
-  }
+      ? this.identifyAllBy(records, idAttribute)
+      : this.identifyOneBy(records, idAttribute);
+    );
 
   // Returns the value(s) of an individual record. This normalizes identifiers, 
   // so it will return 
-  identifyOne(record, idAttribute = this.getOption('idAttribute') ) {
+  identifyOneBy(record, idAttribute) {
 
     // Just return if this is a basic data type. We assume it's a key value
     // already.
@@ -1081,7 +1088,7 @@ class Mapper {
     return idAttribute.map(_.partial(this.getAttribute, record));
   }
 
-  identifyAll(records, idAttribute) {
+  identifyAllBy(records, idAttribute) {
     return records.map(_.partial(this.identifyOne, _, idAttribute), this);
   }
 
