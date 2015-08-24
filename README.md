@@ -185,11 +185,11 @@ const People = bookshelf('Mapper').extend({
         children: hasMany('People', 'parent_id');
       });
   }
-  
+
   drinkingAge(age) {
     return this.setOption('drinkingAge', age);
   }
-  
+
   drinkers() {
     return this.all().where('age', '>=', this.getOption('drinkingAge'));
   }
@@ -256,6 +256,11 @@ class Mapper {
   patch(records, attributes)
   load(records, relations)
   getOption(option)  // (for internal use)
+
+  getAttributes(records, attributes)
+  identify(record)
+  identify(records)
+  isNew(record)
 }
 
 ```
@@ -302,11 +307,11 @@ class Mapper {
     }
 
     this._query = query;
-    
+
     // This instance is entirely mutable for the duration
     // of the constructor.
     this._mutable = true;
-    
+
     // First set defaults.
     this._options = Immutable.fromJS({
       withRelated: {},
@@ -315,7 +320,7 @@ class Mapper {
       defaultAttributes: {},
       relations: {}
     }).asMutable();
-    
+
     // Now allow extra mutations to be set by inheriting class. Typically
     // setting options or the query.
     //
@@ -325,7 +330,7 @@ class Mapper {
     // constructor call into a factory method.
     //
     const mapper = this.withMutations(this.initialize);
-    
+
     // Override those with supplied options. (This is not client facing,
     // it's for use when mapper instances clone themselves from
     // `.query` and `.setOption`).
@@ -333,23 +338,23 @@ class Mapper {
     // Calling `asImmutable()` here locks the instance.
     //
     mapper._options.merge(options).asImmutable();
-    
+
     // Now lock it down. We return it in the off chance that `extend` was called
     // in a callback.
     return mapper.asImmutable();
   }
-  
+
   initialize() { /* noop */ }
-  
+
   // -- Options --
-  
+
   getOption(option) {
-  
+
     // Options must be initialized before they are accessed.
     if (!this._options.has(option)) {
       throw new InvalidOption(option, this);
     }
-      
+
     // Have to ensure references are immutable. Mutable mapper chains
     // could leak.
     return Iterable.IsIterable(result)
@@ -364,10 +369,10 @@ class Mapper {
       .zipObject()
       .value()
   }
-  
+
   // Change an option on the mapper chain. If 
   setOption(option, value) {
-  
+
     // The first time we call 'setMutability' on `_options` while mutable,
     // it will return a mutable copy. Each additional call will return the
     // same instance.
@@ -381,13 +386,12 @@ class Mapper {
     //
     const newOptions = this._setMutability(this._options)
       .set(option, Immutable.fromJS(value));
-    
+
     // If there was a change, return the new instance.
     return newOptions === this._options
-      ? this
-      : new this.constructor(newOptions, this._query);
+      ? this : new this.constructor(newOptions, this._query);
   }
-  
+
   changeOption(option, setter) {
     let value = this.getOption(option);
     if (Iterable.IsIterable(value)) {
@@ -395,9 +399,9 @@ class Mapper {
     }
     return this.setOption(option, setter(value));
   }
-  
+
   // -- Options examples --
-  
+
   // See relations section for more info on `withRelated`.
   withRelated(related, query = null) {
     const normalized = normalizeWithRelated(related, query);
@@ -405,7 +409,7 @@ class Mapper {
       return withRelated.mergeDeep(normalized);
     });
   }
-  
+
   // Do these two in the `withMutations` callback to prevent an extra copy
   // being made.
   //
@@ -417,86 +421,86 @@ class Mapper {
       mapper.setOption('single', false);
       if (!_.isEmpty(ids)) {
         idAttribute = this.getOption('idAttribute')
-        mapper.query('whereIn', idAttribute, ids);
+          mapper.query('whereIn', idAttribute, ids);
       }
     });
   }
-  
+
   one(id) {
     return this.mutate(g => {
       g.setOption('single', true);
       if (id != null) {
         idAttribute = this.getOption('idAttribute')
-        g.where(idAttribute, id)
+          g.where(idAttribute, id)
       }
     });
   }
-  
+
   // -- Initialization type stuff --
- 
+
   tableName(tableName) {
     if (_.isEmpty(arguments)) {
       return this.getOption('tableName');
     }
     return this.setOption('tableName', tableName);
   }
-  
+
   idAttribute(idAttribute) {
     if (_.isEmpty(arguments)) {
       return this.getOption('idAttribute');
     }
     return this.setOption('idAttribute', idAttribute)
   }
-  
+
   relations(relationName, relation) {
-  
+
     // Getter: .relations();
     if (_.isEmpty(arguments)) {
       return this.getOption('relations');
     }
-    
+
     // Setter: .relations({projects: hasMany('Project'), posts: hasMany('Post')});
     if (_.isObject(relation)) {
       return this.withMutation(g =>
         _.each(relation, (factory, name) => this.relations(name, factory))
       )
     }
-    
+
     // Setter: .relations('projects', hasMany('Project'));
     return this.changeOption('relations', (relations) =>
       relations.set(relationName, relation)
     );
   }
-  
+
   // -- Query --
   query(method, ...methodArguments) {
-  
+
     // Ensure we have a query.
     const query = this._query || this._client.knex(this.constructor.tableName);
-    
+
     // Support `.query()` no argument syntax.
     if (_.isEmpty(arguments)) {
       return query.clone();
     } 
-    
+
     // If immutable we must clone the query object.
     const newQuery = this._mutable ? query : query.clone();
-    
+
     // Support string method or callback syntax.
     if (_.isString(method)) {
       newQuery[method].apply(newQuery, methodArguments);
     } else {
       method(newQuery);
     }
-    
+
     // Now return a chain object.
     return this._mutable
       ? this
       : new this.constructor(this._client, this._options, newQuery);
   }
-  
+
   // -- Query example --
-  
+
   where(filter, ...args) {
     // Handle either of these:
     // `.where(age, '>', 18)`
@@ -504,12 +508,12 @@ class Mapper {
     filter = _.isString(filter)
       ? this.constructor.attributeToColumn(filter)
       : this.constructor.getAttributes(filter);
-      
+
     return this.query('where', filter, ...args);
   }
-  
+
   // -- Utility --
-  
+
   // Create a copy of this instance that is mutable.
   asMutable() {
     if (this._mutable) {
@@ -520,15 +524,15 @@ class Mapper {
       return result;
     }
   }
-  
+
   // Lock this instance.
   asImmutable() {
     this._mutable = false;
     return this;
   }
-  
+
   // Chain some changes that wont create extra copies.
-  withMutations: (callback) {
+  withMutations(callback) {
 
     // Apply our callback function.
     if (_.isFunction(callback)) {
@@ -544,10 +548,10 @@ class Mapper {
       const hash = callback.bind(mapper)(mapper);
       mapper._applyMutationHash(hash)
 
-      if (!wasMutable) {
-        // Restore previous immutability.
-        mapper.asImmutable();
-      }
+        if (!wasMutable) {
+          // Restore previous immutability.
+          mapper.asImmutable();
+        }
 
       // Return 
       return mapper;
@@ -561,47 +565,46 @@ class Mapper {
     return mapper._applyMutationHash(callback)
   }
 
-  // Definitely should not be called on an immutable mapper.
-  _applyMutationHash: (hash) {
-    let mapper = this;
-    hash.forEach((argument, method) =>
-      const func = mapper[method];
-      if (!_.isFunction(func)) throw new TypeError(
-        `Expected ${method} to be a function, got '${func}'`
-      );
+   // Definitely should not be called on an immutable mapper.
+   _applyMutationHash: (hash) {
+     let mapper = this;
+     hash.forEach((argument, method) =>
+     const func = mapper[method];
+     if (!_.isFunction(func)) throw new TypeError(
+       `Expected ${method} to be a function, got '${func}'`
+     );
 
-      mapper = func(argument);
+     mapper = func.call(mapper, argument);
 
-      if (!mapper instanceof this.constructor) throw new TypeError(
-        `Expected mutation hash options to call chainable methods. Returned non-Mapper value '${mapper}'`
-      );
-    );
-    return mapper;
-  }
+     if (!mapper instanceof this.constructor) throw new TypeError(
+       `Expected mutation hash options to call chainable methods. Returned non-Mapper value '${mapper}'`
+       );
+     );
+     return mapper;
+   }
 
-  // -- Helper --
-   
-  _setMutability(object) {
-    return object[this._mutable ? 'AsMutable' : 'AsImmutable']();
-  }
+   // -- Helper --
 
+   _setMutability(object) {
+     return object[this._mutable ? 'AsMutable' : 'AsImmutable']();
+   }
 
-  // -- Extending --
+   // -- Extending --
 
-  extend(methods) {
-    // Create a clone of self.
-    class ChildMapper extends this.constructor {
-      constructor(...args) {
-        super(...args);
-      }
-    }
-    
-    // Mix in the new methods.
-    _.extend(ChildMapper.protoype, methods);
+   extend(methods) {
+     // Create a clone of self.
+     class ChildMapper extends this.constructor {
+       constructor(...args) {
+         super(...args);
+       }
+     }
 
-    // Instantiate the instance.
-    return new ChildMapper(this._options, this._query.clone());
-  }
+     // Mix in the new methods.
+     _.extend(ChildMapper.protoype, methods);
+
+     // Instantiate the instance.
+     return new ChildMapper(this._options, this._query.clone());
+   }
 }
 ```
 
@@ -746,29 +749,32 @@ class ColumnNaming {
 
 class HasOne {
   constructor(Self, Other, keyColumns) {
-
-    // Allow registry keys instead of actual mapper instances.
-    Other = bookshelf.ensureMapper(this.Other);
-    Self = bookshelf.ensureMapper(this.Self);
-
-    // Should consider how composite keys will be treated here.
-    // This can be done on a per-relation basis.
-    const selfKeyColumn = keyColumns['selfKeyColumn'] || Self.idAttribute();
-    const otherReferencingColumn = keyColumns['otherReferencingColumn'] ||
-      defaultReferenceTo(Self, selfKeyColumn)
-
-    _.extend(this, {Self, Other, selfKeyColumn, otherReferencingColumn});
+    _.extend(this, {Self, Other, keyColumns});
   }
 
-  getSelfKey(instance) {
-    return this.Self.getAttributes(instance, this.selfKeyColumn);
+  selfKeyColumn(client) {
+    return keyColumns['selfKeyColumn'] || (
+      keyColumns['selfKeyColumn'] = client(Self).idAttribute()
+    );
+  }
+
+  otherReferencingColumn(client) {
+    return keyColumns['otherReferencingColumn'] || (
+      keyColumns['otherReferencingColumn'] = ColumnNaming.defaultReferenceTo(
+        client(Self), selfKeyColumn()
+      )
+    );
+  }
+
+  getSelfKey(client, instance) {
+    return client(this.Self).getAttributes(instance, this.selfKeyColumn);
   }
 
   // Returns an instance of `Mapper` that will only create correctly
   // constrained models.
   forOne(client, target) {
     const {otherReferencingColumn, Other} = this;
-    const targetKey = this.getSelfKey(target);
+    const targetKey = this.getSelfKey(client, target);
 
     return Other.withMutations(Other =>
       Other.client(client)
@@ -784,14 +790,14 @@ class HasOne {
   // really make sense.
   forMany(client, targets) {
     const {otherReferencingColumn, Other} = this;
-    const targetKeys = targets.map(this.getSelfKey, this);
+    const targetKeys = targets.map(_.partial(this.getSelfKey, client), this);
 
     return Other.withMutations(Other =>
       Other.client(client).all().whereIn(otherReferencingColumn, targetKeys);
     );
   }
 
-  // Associate retrieved models with targets. Used for eager loading.
+  // Associate retrieved records with targets. Used for eager loading.
   attachMany(targets, relationName, otherRecords) {
     const {Other, Self} = this;
 
@@ -817,6 +823,8 @@ class HasOne {
 //   homeAddress: belongsTo('Address', {selfReferencingKey: 'home_adress_id'})
 //   workAddress: belongsTo('Address', {selfReferencingKey: 'work_adress_id'})
 // });
+//
+// TODO: This is no good because you can't chain `.through()`.
 //
 export default function hasOne(OtherMapper, keyColumns) {
 
@@ -897,6 +905,7 @@ function normalizeWithRelated(withRelated) {
 }
 
 class Mapper {
+
   // ...
   related(instance, relationName) {
     // Either bookshelf instance or transaction.
@@ -904,36 +913,35 @@ class Mapper {
     const relation = _.isString(relationName)
       ? this.getRelation(relationName)
       : relationName;
-    
+
     // Deliberately doing this check here to simplify relation code.
     // ie. simplify overrides by giving explit 'one' and 'many' methods.
     const mapper = _.isArray(instance)
       ? relation.forMany(client, instance)
       : relation.forOne(client, instance);
   }
-  
+
   load(target, related) {
     const normalized = normalizeWithRelated(related);
-    
+
     const relationPromises = _.mapValues(normalized, ({callback, nested}, relationName) => {
       const relation = this.getRelation(relationName);
-      const gateway = this.related(target, relation)
-      return gateway.withMutations(r =>
+      return this.related(target, relation).withMutations(r =>
         // Ensure nested relations are loaded.
-      // Optionally apply query callback.
+        // Optionally apply query callback.
         r.all().withRelated(nested).mutate(callback)
       )
       .fetch()
       .then(result => {
         // Get all the models and attach them to the targets.
-      const targets = _.isArray(target) ? target : [target];
-      return relation.attachToMany(targets, relationName, models);
+        const targets = _.isArray(target) ? target : [target];
+        return relation.attachToMany(targets, relationName, models);
       })
     });
-    
+
     Promise.props(relationPromises).return(target);
   }
-  
+
   fetch() {
     const query = this.query();
     let handler = null;
@@ -942,34 +950,34 @@ class Mapper {
     }
     query.bind(this).then(this._handleFetchResponse)
   }
-  
+
   fetchOne(id) {
     return this.asMutable().one(id).fetch();
   }
-  
+
   fetchAll(ids) {
     return this.asMutable().all(ids).fetch();
   }
-  
+
   _handlefetchResponse(response) {
     const required = this.getOption('required');
-    const single   = this.getOption('single')
+    const single   = this.getOption('single');
 
     if (required) {
-    this._assertFound(response);
+      this._assertFound(response);
     } 
-    
+
     return this.forge(single ? _.head(response) : response);
   }
-  
+
   _assertFound(result) {
     if (_.isEmpty(result)) {
       const single = this.getOption('single');
-        // Passing `this` allows debug info about query, options, table etc.
+      // Passing `this` allows debug info about query, options, table etc.
       throw new (single ? NotFoundError : EmptyError)(this);
     }
   }
-  
+
   // ...
 }
 ```
@@ -1002,6 +1010,131 @@ bookshelf(Person)
     
     person.pushRelated('pets', {type: 'mule'}).save({withRelated: true});
   })
+```
+
+### Save/patch/insert/update
+
+```js
+
+import Immutable from 'immutable';
+const {List: {isList}} = Immutable;
+
+class Mapper {
+
+  isComposite() {
+    return isList(this.getOption('idAttribute'));
+  }
+
+  identify(records, idAttribute) {
+
+    // If records is an array it might be multiple records. However, if the
+    // first element of the array is either an object or an array (ie. not
+    // a valid key value) we assume that this a collection.
+    return _.isArray(records) && _(records).head().isObject()
+      ? this.identifyAll(records, idAttribute)
+      : this.identifyOne(records, idAttribute);
+  }
+
+  // Returns the value(s) of an individual record. This normalizes identifiers, 
+  // so it will return 
+  identifyOne(record, idAttribute = this.getOption('idAttribute') ) {
+
+    // Just return if this is a basic data type. We assume it's a key value
+    // already.
+    //
+    //     (5, 'id') -> 5
+    //
+    if (!_.isObject(record)) {
+      return record;
+    }
+
+    // Simple non-composite key.
+    //
+    //     ({id: 5}, 'id') -> 5
+    //
+    const isComposite = !_.isString(idAttribute);
+
+    if (!isComposite) {
+      return this.getAttribute(record, idAttribute);
+    }
+
+    // Composite keys are handled differently, return an array.
+
+    // If this is an array, assume it contains composite key values, and return
+    // it.
+    //
+    //     ([0, 1], ['id_a', 'id_b']) -> [0, 1]
+    //
+    if (_.isArray(record)) {
+
+      if (record.length !== idAttribute.length) throw new TypeError(
+        `Invalid key length, expected length ${idAttribute.length}, got [${record}]`
+      );
+
+      return record;
+    }
+
+    // If this is a record with a composite key, do this:
+    // 
+    //     ({id_a: 0, id_b: 1}, ['id_a', 'id_b']) -> [0, 1]
+    //
+    return idAttribute.map(_.partial(this.getAttribute, record));
+  }
+
+  identifyAll(records, idAttribute) {
+    return records.map(_.partial(this.identifyOne, _, idAttribute), this);
+  }
+
+  isNew() {
+    const idAttribute = this.getOption('idAttribute');
+    const values = this.getAttributes(record, idAttribute);
+
+    return _.every(values, (value) => value != null);
+  }
+
+  save(records) {
+    groupedRecords = _.groupBy(records, record =>
+      this.isNew(record) ? 'insert' : 'update'
+    );
+
+    return Promise.all(
+      groupedRecords.map((records, method) => this[method](records))
+    );
+  }
+
+  records(records) {
+    if (_.isEmpty(records)) {
+      throw Error();
+    }
+
+    const idAttribute = this.getOption('idAttribute');
+    const isComposite = this.isComposite();
+    const ids = this.identify(records);
+
+    const isSingle =
+      isComposite && _(idAttribute).head().isArray()
+      || _.isArray(idAttribute);
+
+    return this.withMutations(Mapper =>
+      this.query(isSingle ? 'where' : 'whereIn', idAttribute, ids)
+        // TODO: save models so that they can be updated and returned by `patch`.
+        .setOption('records', records)
+    );
+  }
+
+  patch(attributes) {
+
+    const query = this.query();
+    const idAttribute = this.getOption('idAttribute');
+
+    return query
+    .whereIn(idAttribute, ids)
+    .update(this.attributesToColumns(attributes))
+    .tap(changedCount => {
+      if (changedCount !== 
+    });
+  }
+}
 ```
 
 ## Active Record Models
@@ -1051,57 +1184,86 @@ class Mapper {
   constructor: (client) {
     this.option('client', client);
   }
-  
-  // ...
-  
-  // Basic record modification methods to be overridden by plugin modules.
-  createRecord(attributes) {
-    return attributes;
-  }
-  
-  setAttributes(record, attributes) {
-    return _.extend(record, attributes);
-  }
-  
-  getAttributes(record) {
-    return record;
-  }
-  
-  setRelated(record, relations) {
-    return _.extend(record, relations);
-  }
-  
-  getRelated(record, relation) {
-    return record[relation];
-  }
-  
-  // Private helper.
-  
-  _forgeOne(attributes) {
-    _.defaults(attributes, this.option('defaultAttributes'));
-    return this.createRecord(attributes);
-  }
-  
-  // Public interface.
-  
-  forge(attributes = {}) {
-  
-    if (_.isArray(attributes)) {
-      let instances = attributes.map(this._forgeOne, this);
-      this.trigger('forged forged:many', instances);
-      return instances;
-    }
-    
-    if (_.isObject(attributes)) {
-      let instance = this._forgeOne(attributes);
-      this.trigger('forged forged:one', instance);
-      return instance;
-    }
-    
-    throw new Error('`attributes` must be instance of Object or Array');
-  }
-  
-  // ...
+
+   // ...
+
+
+   // Parse/format hooks.
+
+   columnToAttribute(column) {
+     return column;
+   }
+
+   attributeToColumn(attribute) {
+     return attribute;
+   }
+
+   columnsToAttributes(columns) {
+     return columns;
+   }
+
+   attributeToColumns(attributes) {
+     return attributes;
+   }
+
+   // Basic record modification methods to be overridden by plugin modules.
+
+   createRecord(attributes = {}) {
+     return attributes;
+   }
+
+   destroyRecord(record) {
+     return null;
+   }
+
+   setAttributes(record, attributes) {
+     return _.extend(record, attributes);
+   }
+
+   getAttribute(record, attribute) {
+     return record[attribute];
+   }
+
+   getAttributes(record, attributes = null) {
+     return attributes ? _.pick(record, attributes) : record;
+   }
+
+   setRelated(record, relations) {
+     return _.extend(record, relations);
+   }
+
+   // Might not need this 
+   getRelated(record, relation) {
+     return record[relation];
+   }
+
+   // Private helper.
+
+   _forgeOne(attributes) {
+     _.defaults(attributes, this.option('defaultAttributes'));
+     return this.createRecord(attributes);
+   }
+
+   // Public interface.
+
+   forge(attributes = {}) {
+
+     if (_.isArray(attributes)) {
+       let instances = attributes.map(this._forgeOne, this);
+       this.trigger('forged forged:many', instances);
+       return instances;
+     }
+
+     if (_.isObject(attributes)) {
+       let instance = this._forgeOne(attributes);
+       this.trigger('forged forged:one', instance);
+       return instance;
+     }
+
+     throw new Error('`attributes` must be instance of Object or Array');
+   }
+
+   // ...
 }
 
 // This is the new ModelMapper, that produces `bookshelf.Model` instances.
