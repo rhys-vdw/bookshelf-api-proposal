@@ -506,6 +506,8 @@ It's also possible to get relations for multiple records at the same time:
 ```js
 // Get all immediate bosses of members of a project with ID 8.
 Project.related({id: 8}, 'members').fetch().then(members => {
+
+  // Check result.
   assert.deepEqual(members, [
     {id: 1, name: 'Peter', boss_id: 3},
     {id: 5, name: 'John', boss_id: 3},
@@ -516,12 +518,13 @@ Project.related({id: 8}, 'members').fetch().then(members => {
 
 }).then(bosses => {
 
-    assert.deepEqual(bosses, [
+  // Check result.
+  assert.deepEqual(bosses, [
     {id: 3, name: 'Sarah', boss_id: null},
     {id: 1, name: 'Peter', boss_id: 3}
   ]);
 
-})
+});
 
 // The above might be written more compactly as:
 Project.related(8, 'members.bosses').fetch().then(bosses =>
