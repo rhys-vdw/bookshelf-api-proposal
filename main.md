@@ -160,11 +160,11 @@ Backbone.
 ```js
 const Mapper = bookshelf('Mapper');
 
-Mapper.tableName('users') === Mapper;
-// -> false, `tableName` returned a modified copy.
+Mapper.table('users') === Mapper;
+// -> false, `table` returned a modified copy.
 
-const Users = Mapper.tableName('users');
-Users === Users.tableName('users');
+const Users = Mapper.table('users');
+Users === Users.table('users');
 // -> true, nothing changed.
 ```
 
@@ -253,7 +253,7 @@ functions. For example calling `.withRelated(relation)` before `.fetch()`.
 ```js
 bookshelf.inheritMapper('People', {
   initialize() {
-    this.tableName('people');
+    this.table('people');
   }
 
   adultAge(adultAge) {
