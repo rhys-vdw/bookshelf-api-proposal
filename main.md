@@ -220,6 +220,16 @@ bookshelf.registerMapper('Person', People);
 Or, more simply:
 
 ```js
+bookshelf.initMapper('People', (People) =>
+  People
+    .table('people')
+    .idAttribute('person_id')
+});
+```
+
+Or, shorthand:
+
+```js
 bookshelf.initMapper('People', {
   table: 'people'
   idAttribute: 'person_id'
