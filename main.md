@@ -50,7 +50,7 @@ exports default Bookshelf(knex);
 
 The Mapper is designed to be highly flexible and extensible object. It targets
 a specific table and has knowledge of relations and primary keys. It is
-immutable&em;any method that would mutate its state instead returns a modified
+immutable&mdash;any method that would mutate its state instead returns a modified
 copy.
 
 You use the Mapper as a specializable interface to your data. It handles all
