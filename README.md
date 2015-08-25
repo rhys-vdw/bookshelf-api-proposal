@@ -1033,7 +1033,7 @@ class Mapper {
     return this.identifyBy(records, this.getOption('idAttribute'));
   }
 
-  identifyBy(
+  identifyBy(records, idAttribute) {
     // If records is an array it might be multiple records. However, if the
     // first element of the array is either an object or an array (ie. not
     // a valid key value) we assume that this a collection.
@@ -1041,6 +1041,7 @@ class Mapper {
       ? this.identifyAllBy(records, idAttribute)
       : this.identifyOneBy(records, idAttribute);
     );
+  }
 
   // Returns the value(s) of an individual record. This normalizes identifiers, 
   // so it will return 
@@ -1092,11 +1093,9 @@ class Mapper {
     return records.map(_.partial(this.identifyOne, _, idAttribute), this);
   }
 
-  isNew() {
-    const idAttribute = this.getOption('idAttribute');
-    const values = this.getAttributes(record, idAttribute);
-
-    return _.every(values, (value) => value != null);
+  isNew(record) {
+    const id = this.identifyOneBy(record, this.getOption('idAttribute'));
+    return _.isArray(id) ? _.any(id, (id) => id == null) : id == null;
   }
 
   save(records) {
