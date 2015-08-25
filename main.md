@@ -464,7 +464,7 @@ bookshelf.initMapper('Staff', {
 Relations provide an interface to generate Mappers that can access and create
 matching records.
 
-#### Fetching and persisting relations
+#### Fetchine and persisting relations
 
 ```js
 .related(record, relationName)
@@ -767,7 +767,7 @@ Staff.withRelated('teamMates', TeamMates =>
 
 Staff.withRelated('teamMates', {
   whereNull: 'boss_id'
-  where: ['title', 'programmer']
+  where: {title: 'programmer'}
 }).fetch(staffMember);
 
 
