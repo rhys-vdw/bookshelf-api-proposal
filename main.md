@@ -409,7 +409,7 @@ createListPromise.tap(items =>
 );
 ```
 
-### Relations
+## Relations
 
 Support for the pre-existing relation types:
 
@@ -430,7 +430,7 @@ import Bookshelf, {Relations} from bookshelf;
 {hasMany, belongsTo, belongsToAndHasMany} = Relations;
 ```
 
-#### Definition
+### Definition
 
 Relations are added to a `Mapper` via the `.relations()` setter.
 
@@ -459,12 +459,12 @@ bookshelf.initMapper('Staff', {
 });
 ```
 
-#### Loading related data
+### Loading related data
 
 Relations provide an interface to generate Mappers that can access and create
 matching records.
 
-##### Fetching and persisting relations
+#### Fetching and persisting relations
 
 ```js
 .related(record, relationName)
@@ -530,13 +530,13 @@ Project.related({id: 8}, 'members').fetch().then(members => {
 Project.related(8, 'members.bosses').fetch().then(bosses =>
 ```
 
-##### Eager loading 
+#### Eager loading 
 
 Eager loading allows loading a record with its relations attached.
 
 Methods used to control eager loading are:
 
-###### `.load(target, relations)`
+##### `.load(target, relations)`
 
 Load relations onto an existing record `target`. Returns a promise resolving
 to the extended record.
@@ -557,7 +557,7 @@ Projects.fetch(8)
 )
 ```
 
-###### `withRelated(relations)`
+##### `withRelated(relations)`
 
 Sets an option on the Mapper to always fetch the given relations when fetching
 records. Returns records extended as if `.load` had been called on them.
@@ -577,7 +577,7 @@ Project.withRelated(['members.boss', 'owner.boss']).fetch(8).then(project =>
 );
 ```
 
-###### Recursive relationships
+##### Recursive relationships
 
 ```js
 // Fetch staff member Gavin with up to next three levels of bosses.
@@ -601,7 +601,7 @@ Staff.withRelated('boss^3').fetch(4).then(gavin =>
 );
 ```
 
-###### Relation initializer
+##### Relation initializer
 
 You can rescope relations with a callback.
 
@@ -637,7 +637,7 @@ const MyFavourites = Accounts.related(myAccount, 'reviews', {
 const MyFavourites = Accounts.related(myAccount, 'reviews', ['favourites']);
 ```
 
-###### Relation DSL
+##### Relation DSL
 
 ```js
 .withRelated(relations, [initializer]);
@@ -664,7 +664,7 @@ API, but the callbacks now apply to the `Mapper` object rather than the underlyi
 
 Examples of relations:
 
-**relations: simple string**
+###### relations: simple string
 
 ```js
 Staff.withRelated('department').fetch(5).then(staff =>
@@ -682,7 +682,7 @@ assert.deepEqual(
 );
 ```
 
-**relations: nested string**
+###### relations: nested string
 
 ```js
 Staff.withRelated('projects.clients').all([5, 4, 1]).fetch().then(staff =>
@@ -698,7 +698,7 @@ assert.deepEqual(
 );
 ```
 
-**relations: recursive relations**
+###### relations: recursive relations
 ```js
 Staff.load(staffMember, 'boss^').then(staffMember
 Staff.load(staffMember, 'boss^8').then(staffMember
@@ -738,7 +738,7 @@ assert.deepEqual(nestedBoss, {
 });
 ```
 
-**relations: true**
+###### relations: true
 
 ```js
 Staff.withRelated(true).fetchOne(5).then(staffMember =>
@@ -754,7 +754,7 @@ assert.deepEqual(
 );
 ```
 
-**relations: intializer**
+###### relations: intializer
 
 Supply an intializer to modify the Mapper returned by the relation.
 
@@ -799,7 +799,7 @@ bookshelf.extendMapper('Staff', {
 Staff.withRelated('teamMates', ['fullTime']).all(bob, james).fetch();
 ```
 
-**relations: Object**
+###### relations: Object
 
 Similar to initializer array (see above), but takes arguments to be passed to setters.
 
@@ -810,7 +810,7 @@ Author.withRelated({
 ).fetchAll();
 ```
 
-**relations: Aliasing relations**
+###### relations: Aliasing relations
 
 Sometime you might want to do this:
 
