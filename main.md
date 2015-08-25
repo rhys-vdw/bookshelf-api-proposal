@@ -189,7 +189,7 @@ Users.save({name: 'John'}).then(user =>
 // SQL: insert into users (name, is_admin) values ('John', false);
 // -> {id: 4, name: 'John'}
 
-Admins.save([{name: 'Jane'}, {name: 'Mary').then(admins =>
+Admins.save([{name: 'Jane'}, {name: 'Mary'}]).then(admins =>
 // SQL: insert into users (name, is_admin) values ('Jane', true), ('Mary', true);
 // -> [{id: 5, name: 'Jane', is_admin: true}, {id: 6, name: 'Mary', is_admin: true}]
 
