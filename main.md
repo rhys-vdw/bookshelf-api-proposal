@@ -117,10 +117,12 @@ import moment from 'moment';
 
 Books = bookshelf('Books');
 
+// Get all science fiction titles published in the last year, including their
+// authors.
 Books
   .where({genre: 'sci-fi'})
-  .where('publication_date', '>', moment().subtract(1, 'day'))
-  .withRelated(['author'])
+  .where('publication_date', '>', moment().subtract(1, 'year'))
+  .withRelated('author')
   .fetch()
   .then(books => // ...
 ```
@@ -204,13 +206,13 @@ Admins.require().fetchOne(4)
 Usually we want to define a set of mappers before our program runs and then
 reference them in domain logic.
 
-Mappers can be registered and retrieved from the Mapper registry. String
-identifiers are used stored identify Mappers, helping break node dependency
+Mappers can be registered and retrieved from the mapper registry. String
+identifiers are used stored identify mappers, helping break node dependency
 loops.
 
 ```js
 const Mapper = bookshelf('Mapper');
-const People = Mapper.table('people');
+const People = Mapper.table('people').idAttribute('person_id');
 
 bookshelf.registerMapper('Person', People);
 ```
@@ -224,8 +226,7 @@ bookshelf.initMapper('People', {
 });
 ```
 
-We can also extend a Mapper to add or override methods. This can be used
-like ActiveRecord's scopes.
+We can also extend a Mapper to add or override methods.
 
 ```js
 bookshelf.inheritMapper('Posts', {
@@ -277,10 +278,13 @@ bookshelf.initMapper('Australians', {
 });
 
 bookshelf('Americans').fetch().then(americans =>
-// SQL: select people.* from people where country = 'usa' and date_of_birth <= [21 years ago]
+// SQL: select people.* from people where country = 'usa';
+//
+bookshelf('Americans').adults().fetch().then(americans =>
+// SQL: select people.* from people where country = 'usa' and date_of_birth <= [21 years ago];
 
-bookshelf('Australians').fetch().then(americans =>
-// SQL: select people.* from people where country = 'aus' and date_of_birth <= [18 years ago]
+bookshelf('Australians').adults().fetch().then(americans =>
+// SQL: select people.* from people where country = 'aus' and date_of_birth <= [18 years ago];
 ```
 
 
@@ -338,7 +342,7 @@ Mapper.insert(records).then(inserted =>
 Mapper.update(records).then(updated =>
 
 // Update a set of records with the same data.
-Mapper.patch(records, is_a_record: true).then(patched =>
+Mapper.patch(records, {is_a_record: true}).then(patched =>
 
 // updates or inserts records based on result of `Mapper.isNew(record)`.
 Mapper.save(records).then(saved =>
@@ -377,8 +381,8 @@ createListPromise.tap(items =>
 
   ShoppingList.save(items);
   // SQL:
-  //   update shopping_list set name = 'Wading Pool', qty = 1, unit = each where id = 1;
-  //   update shopping_list set name = 'Vodka', ...
+  //   update shopping_list set name = 'Wading Pool', qty = 1, unit = 'each' where id = 1;
+  //   update shopping_list set name = 'Vodka', qty = 100, unit = 'liter' where id = 2;
   //
   // No bulk updates, nor dirty checking. These can be achieved with rich models.
 })
@@ -435,8 +439,8 @@ Staff = bookshelf('Mapper').table('staff').relations({
   department: belongsTo('Department'),
   teamMates: belongsToAndHasMany('Staff').through('ProjectMemberships'),
   projects: belongsToAndHasMany('Project').through('ProjectMemberships'),
-  ownedProjects: hasMany('Project', {otherReferencingKey: 'owner_id'}),
-  boss: belongsTo('Staff', {selfReferencingKey: 'superior_id'})
+  ownedProjects: hasMany('Project', {theirRef: 'owner_id'}),
+  boss: belongsTo('Staff', {myRef: 'superior_id'})
 });
 
 bookshelf.registerMapper('Staff', Staff);
@@ -449,8 +453,8 @@ bookshelf.initMapper('Staff', {
     department: belongsTo('Department'),
     teamMates: belongsToAndHasMany('Staff').through('ProjectMemberships'),
     projects: belongsToAndHasMany('Project').through('ProjectMemberships'),
-    ownedProjects: hasMany('Project', {otherReferencingKey: 'owner_id'}),
-    boss: belongsTo('Staff', {selfReferencingKey: 'superior_id'})
+    ownedProjects: hasMany('Project', {theirRef: 'owner_id'}),
+    boss: belongsTo('Staff', {myRef: 'superior_id'})
   }
 });
 ```
@@ -553,7 +557,7 @@ Projects.fetch(8)
 ###### `withRelated(relations)`
 
 Sets an option on the Mapper to always fetch the given relations when fetching
-records. The records returned extended as if `.load` had been called.
+records. Returns records extended as if `.load` had been called on them.
 
 ```js
 Project.withRelated(['members.boss', 'owner.boss']).fetch(8).then(project =>
@@ -817,24 +821,34 @@ Author.withRelated('articles as favouriteArticle', [
 You can even use this to skip relations:
 
 ```js
-// Get all record labels that have released a Black Sabbath album.
+// Get all record labels that have released a Black Sabbath album. Note that
+// these are nested directly under the `band` record.
 Band
   .where(name: 'Black Sabbath')
-  .withRelated('(albums.recordLabel) as recordLabels')
+  .withRelated('(albums.recordLabel):recordLabels')
   .fetchOne()
+  .then(band =>
 
+
+// Get Gavin with a nested reference to the head of the company.
 Staff
   .where(name: 'Gavin')
-  .withRelated('(boss^Infinity) as ceo')
+  .withRelated('(boss^Infinity):ceo')
+
+// Let's see how many cars Gavin's boss owns.
+Staff.related(gavin, '(boss^Infinity):ceo.cars').count().then(carCount =>
 
 // Don't know about the syntax, but might as well consider every conceivable use
 // case while we're here.
 
+// Get `Black Sabbath` instance with a nested list of drummers who played with
+// Ozzy Osbourne.
 Bands
   .where(name: 'Black Sabbath')
-  .withRelated(['(albums.recordLabel) as recordLabels', {
-    'recordLabels::albums': ['where', 'singer', 'Ozzy Osbourne']
-  }])
+  .withRelated({
+    '(albums.members):drummers': {where: {role: 'drummer'}}
+    'drummers::albums': {withSinger: 'Ozzy Osbourne'}
+  })
   .fetchOne()
 ```
 
