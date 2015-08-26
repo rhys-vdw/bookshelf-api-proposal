@@ -80,22 +80,26 @@ Users.fetch().then(users =>
 Users.fetch([10, 25]).then(users =>
 // -> select users.* from users where users.id in (10, 25)
 
-// Specifying `idAttribute` can't change the immutable `Users` instance.
-// Here `identify` is called on a new mapper with a different `idAttribute`
-// setting.
+// `identify` is a helper method used internally by the API. It will take
+// a record (or an array of records) and return its ID value (or values).
+
+// The Mapper uses its `idAttribute` setting to find primary keys.
+Users.identify({id: 10, name: 'John'});
+// -> 10
+
+// Calling `idAttribute()` doesn't change the immutable `Users` instance,
+// it returns a new `Mapper` with a different `idAttribute`:
+//
+// See the "Immutability" section for more info.
 Users.idAttribute('user_id').identify([
   {user_id: 25, name: 'Mary'},
   {user_id: 8, name: 'Peter'}
 ]);
 // -> [25, 8]
 
-// The Mapper uses its `idAttribute` setting to find primary keys.
-// `identify` is mainly for internal use.
-Users.identify({id: 10, name: 'John'});
-// -> 10
-
 // Check for presence of `idAttribute` to determine whether a model was
-// retrieved from the database.
+// retrieved from the database. (`isNew` calls `identify` and checks for
+// null/undefined values.)
 Users.isNew({id: null, name: 'Samantha'}) // -> true
 Users.isNew({id: 5, name: 'Georgia'}) // -> false
 
