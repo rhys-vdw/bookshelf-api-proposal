@@ -1047,6 +1047,10 @@ class Mapper {
   // so it will return 
   identifyOneBy(record, idAttribute) {
 
+    if (idAttribute == null) {
+      throw new TypeError('`idAttribute` cannot be null.');
+    }
+
     // Just return if this is a basic data type. We assume it's a key value
     // already.
     //
