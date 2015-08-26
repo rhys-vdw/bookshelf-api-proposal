@@ -56,6 +56,12 @@ copy.
 You use the Mapper as a specializable interface to your data. It handles all
 query building and data persistence.
 
+**NOTE:** The `Mapper` constructor is never called by client code. Mappers can
+extend themselves with `.extend()`, or be instantiated by `bookshelf.initMapper`
+or `bookshelf.inheritMapper` (See "Mapper creation...").  This document uses a
+convention of capitalizing `Mapper` instances to distinguish them from record
+instances.
+
 ### Basic options
 
 There are two required settings for a `Mapper`.
