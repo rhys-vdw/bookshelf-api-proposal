@@ -187,7 +187,7 @@ const Users = bookshelf('Mapper')
 
 const Admins = Users.where('is_admin', true).defaultAttributes({is_admin: true});
 // or
-const Admins = Users.whereDefault('id_admin', true);
+const Admins = Users.whereDefault('is_admin', true);
 
 Users.fetch().then(users =>
 // SQL: select * from users;
@@ -220,14 +220,30 @@ Mappers can be registered and retrieved from the mapper registry. String
 identifiers are used stored identify mappers, helping break node dependency
 loops.
 
+#### `registerMapper()`
+
+We can add any extisting `Mapper` instance to the registry for reuse.
+
+Because mappers are immutable the exact same reference will be returned.
+
 ```js
 const Mapper = bookshelf('Mapper');
 const People = Mapper.table('people').idAttribute('person_id');
 
-bookshelf.registerMapper('Person', People);
+bookshelf.registerMapper('People', People);
+
+assert.equal(People, bookshelf('People'));
 ```
 
-Or, more simply:
+#### `initMapper()`
+
+As a shorthand, we can use `initMapper()` to create a new Mapper.
+
+```js
+bookshelf.initMapper(identifier, [Parent='Mapper'], initializer)
+```
+
+This will do the same as the `registerMapper` example above:
 
 ```js
 bookshelf.initMapper('People', (People) =>
@@ -237,7 +253,8 @@ bookshelf.initMapper('People', (People) =>
 });
 ```
 
-Or, shorthand:
+Or, for convenience, you can provide a shorthand config object as the
+`identifier` argument which will be expanded to the above.
 
 ```js
 bookshelf.initMapper('People', {
@@ -246,7 +263,34 @@ bookshelf.initMapper('People', {
 });
 ```
 
+If you wish to extend a registered `Mapper`, you can provide it as the optional
+second argument:
+
+```js
+bookshelf.initMapper('Germans', 'People', {
+  where: {country: 'germany'}
+});
+
+// Copies options set on `People` mapper.
+assert.equal(bookshelf('Germans').idAttribute(), 'person_id')
+assert.equal(bookshelf('Germans').table(), 'people')
+```
+
+#### `inheritMapper`
+
 We can also extend a Mapper to add or override methods.
+
+```js
+bookshelf.inheritMapper(identifier, [Parent='Mapper'], methods)
+```
+
+##### 'Scopes'
+This will create a new `Mapper` instance that extends the `Parent` mapper with
+new methods.
+
+These methods can act as "scopes". Anything method that calls `query()` (or
+methods that call `query()` such as `where`, `whereIn` etc.) can be chained
+to refine a query.
 
 ```js
 bookshelf.inheritMapper('Posts', {
@@ -259,7 +303,7 @@ bookshelf.inheritMapper('Posts', {
   }
 
   fromLastWeek() {
-    return this.inPeriod(moment(), moment().subtract(1, 'week');
+    return this.inPeriod(moment(), moment().subtract(1, 'week'));
   }
 });
 
@@ -267,8 +311,17 @@ bookshelf('Posts').fromLastWeek().fetch().then(posts =>
 // select posts.* from posts where created_at between [now] and [last week];
 ```
 
-You can also set "options" on the Mapper. These can be read later by other
-functions. For example calling `.withRelated(relation)` before `.fetch()`.
+##### 'Options'
+
+You can also set "options" on the Mapper. Calling `.setOption(option, value)`
+will return a new instance of the mapper if anything has changed.
+
+Option will be read later by other functions. For example calling
+`.withRelated(relation)` before `.fetch()`. Other examples of options from the
+core library include `require()`, `all()` and `one()`.
+
+Below is an example of an inherited mapper that adds an option (`adultAge()`)
+that informs the behaviour of a scope method (`adults()`).
 
 ```js
 bookshelf.inheritMapper('People', {
@@ -287,6 +340,7 @@ bookshelf.inheritMapper('People', {
   }
 });
 
+// We can use this new option in our mapper `initializer`.
 bookshelf.initMapper('Americans', {
   where: {country: 'usa'}
   adultAge: 21
@@ -296,6 +350,8 @@ bookshelf.initMapper('Australians', {
   where: {country: 'aus'}
   adultAge: 18
 });
+
+// The result:
 
 bookshelf('Americans').fetch().then(americans =>
 // SQL: select people.* from people where country = 'usa';
@@ -373,7 +429,7 @@ Mapper.delete(records).then(deleted =>
 ```
 
 ```js
-ShoppingList = bookshelf.extendMapper({
+ShoppingList = bookshelf.inheritMapper({
 
   initialize() {
     this.table('shopping_list_items')
@@ -801,7 +857,7 @@ assert.deepEqual(
 The initializer can also be an array of scopes:
 
 ```js
-bookshelf.extendMapper('Staff', {
+bookshelf.inheritMapper('Staff', {
   initialize() { return {
     table: 'staff',
     relations: {
