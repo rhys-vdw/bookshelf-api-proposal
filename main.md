@@ -540,12 +540,14 @@ bookshelf.initMapper('Staff', {
 Relations provide an interface to generate Mappers that can access and create
 matching records.
 
-#### Fetchine and persisting relations
+#### Fetching and persisting relations
+
+##### `related()`
 
 ```js
-.related(record, relationName)
+.one(record).related(relationName)
+.all(records).related(relationName)
 ```
-
 Calling `.related` will return a `Mapper` configured to create and modify records
 pertaining to its specific relation.
 
@@ -555,7 +557,7 @@ const Staff = bookshelf('Staff');
 const john = {id: 5, name: 'John', boss_id: 3};
 const sarah = {id: 3, name: 'Sarah', boss_id: null};
 
-Staff.related(john, 'projects').fetch().then(projects =>
+Staff.one(john).related('projects').fetch().then(projects =>
 // SQL: select projects.*
 //      from projects
 //      inner join projects_staff on projects.id = projects_staff.project_id
@@ -565,7 +567,7 @@ Staff.related(john, 'projects').fetch().then(projects =>
 //      {id: 7, name: 'Learn JavaScript', owner_id: 5}
 //    ]
 
-SarahsProjects = Staff.related(sarah, 'ownedProjects');
+SarahsProjects = Staff.one(sarah).related('ownedProjects');
 
 // Create a new projects.
 SarahsProjects.save({name: 'Bookshelf.js project'}).then(saved =>
@@ -581,7 +583,7 @@ It's also possible to get relations for multiple records at the same time:
 
 ```js
 // Get all immediate bosses of members of a project with ID 8.
-Project.related({id: 8}, 'members').fetch().then(members => {
+Project.one({id: 8}).related('members').fetch().then(members => {
 
   // Check result.
   assert.deepEqual(members, [
@@ -603,7 +605,7 @@ Project.related({id: 8}, 'members').fetch().then(members => {
 });
 
 // The above might be written more compactly as:
-Project.related(8, 'members.bosses').fetch().then(bosses =>
+Project.one(8).related('members.bosses').fetch().then(bosses =>
 ```
 
 #### Eager loading 
@@ -612,14 +614,19 @@ Eager loading allows loading a record with its relations attached.
 
 Methods used to control eager loading are:
 
-##### `.load(target, relations)`
+##### `.load()`
+
+```js
+.one(record).load(relations)
+.all(records).load(relations)
+```
 
 Load relations onto an existing record `target`. Returns a promise resolving
 to the extended record.
 
 ```js
 Projects.fetch(8)
-.then(project => Projects.load(project, 'members'))
+.then(project => Projects.one(project).load('members'))
 .then(project =>
   assert.deepEqual(project, {
     id: 8,
@@ -633,10 +640,15 @@ Projects.fetch(8)
 )
 ```
 
-##### `withRelated(relations)`
+##### `withRelated()`
 
-Sets an option on the Mapper to always fetch the given relations when fetching
-records. Returns records extended as if `.load` had been called on them.
+```js
+.withRelated(relations).fetch()
+```
+
+Sets an option on the Mapper to fetch the given relations along with their
+records. The returned records have relations attached as if `.load` had been
+called on them.
 
 ```js
 Project.withRelated(['members.boss', 'owner.boss']).fetch(8).then(project =>
