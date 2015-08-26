@@ -408,6 +408,8 @@ Each Mapper provides an interface for doing bulk insertion, patch and update ope
 Note that the Mapper layer alone does not do any dirty checking. This can be achieved
 with the Model plugin.
 
+Here are the methods:
+
 ```js
 // inserts all objects into the database.
 Mapper.insert(records).then(inserted =>
@@ -428,6 +430,8 @@ Mapper.delete(records).then(deleted =>
 }
 ```
 
+Now an example with generated SQL:
+
 ```js
 ShoppingList = bookshelf.inheritMapper({
 
@@ -443,7 +447,9 @@ ShoppingList = bookshelf.inheritMapper({
     return this.patch(records, {is_purchased: true});
   }
 });
-
+ 
+// `save` checks if the records have `id` set, and then determines that they are
+// new and calls `insert`.
 const createListPromise = ShoppingList.save(
   {name: 'Watermelon', qty: 1, unit: 'each'},
   {name: 'Vodka', qty: 2, unit: 'liter'},
@@ -452,8 +458,12 @@ const createListPromise = ShoppingList.save(
 // -> [{id: 1, name: 'Watermelon', ...}, {id: 2, name: 'Vodka', ...}]
 
 createListPromise.tap(items =>
+
+  // Let's apply some 'business logic' and modify the list.
   items[0].name = 'Wading pool';
   items[1].qty = 100;
+
+  // We can save these changes back to the database.
 
   ShoppingList.save(items);
   // SQL:
@@ -465,9 +475,15 @@ createListPromise.tap(items =>
 .tap(items => userIterface.presentItems(items))
 .tap(items => {
   
+  // Some more business logic. This is meant to look like we're working out which items
+  // have been crossed of a shopping list in the UI.
   const purchasedItems = items.filter(item =>
     userInterface.isChecked(item)
   );
+
+  // See above for the definition of `markPurchased`. It calls `patch`.
+  // `.patch()` does an update, but applies it to all targeted items.
+  // In this case we're assuming that both items have been bought.
 
   return ShoppingList.all(purchasedItems).markPurchased();
   // SQL: update shopping_list set is_purchased = true where id in (1, 2);
@@ -475,10 +491,12 @@ createListPromise.tap(items =>
 }).then(purchased => 
 
   if (getSetting('clearOnPurchase')) {
+
+    // Target those same records that have been purchased and clear them.
     return ShoppingList.all(purchasedItems).destroy();
     // SQL: delete from shopping_list where id in (1, 2);
 
-    // Or, if preferable: 
+    // Or, we could just wholesale clear all items that are listed as purchased.
 
     return ShoppingList.purchasedItems().destroy();
     // SQL: delete from shopping_list where is_purchased = true;
