@@ -492,7 +492,7 @@ Support for the pre-existing relation types:
  - `hasOne`
  - `belongsTo`
  - `hasMany`
- - `belongsToAndHasMany` (was `belongsTo`)
+ - `hasAndBelongsToMany` (was `belongsToMany`)
  - `morphOne`
  - `morphMany`
  - and variants of above with `.through`
